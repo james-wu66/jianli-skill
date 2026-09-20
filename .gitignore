@@ -1,0 +1,40 @@
+# ===== 隐私与密钥（绝不能进仓库，git 历史也进不得）=====
+llm_config.py
+config_local.py
+# 所有人的个人档案都不进仓库，只放行假人示例（别在这里写具体名字，
+# 否则 .gitignore 本身就把手用者的真名公开出去了）
+profiles/*.json
+!profiles/示例-张三.json
+profiles/active.txt
+# 本机 Python 路径，每台电脑不一样
+python_local.txt
+
+# ===== 个人数据与私人产物 =====
+output/
+dist/
+_backup_*/
+# 向导会把用户上传的简历原件复制成 assets/templates/user_xxxxxxxx/模板.docx，
+# 那是某个人真实的简历，绝不能进仓库历史
+assets/templates/user_*/
+交接文档.md
+PRD_通用化.md
+计划书_发送前完善.md
+计划书_开源准备.md
+README.txt
+
+# ===== 归档/调试（无开源价值）=====
+legacy/
+tests/
+_cdp_*.mjs
+_t.js
+_tmp*
+
+# ===== Python 运行时 =====
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# ===== AI 会话文件 =====
+.zcode/

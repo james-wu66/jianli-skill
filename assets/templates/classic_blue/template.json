@@ -1,0 +1,35 @@
+{
+  "display_name": "经典蓝灰（原版复刻）",
+  "docx": "模板.docx",
+  "min_nodes": 114,
+  "content_box_cx": [6808470, 6429375],
+
+  "_说明": "节点索引对 assets/templates/classic_blue/模板.docx 实测 dump（2026-09-15）。每项内容在 VML 和 DrawingML 里各存一套，两套索引都必须改。换模板必须重新 dump 核对所有索引。",
+
+  "slots": {
+    "objective":  { "nodes": [[52, 53], [54, 55]] },
+    "proj_title": { "nodes": [56, 73] },
+    "proj_period": { "nodes": [58, 75] },
+    "modules":    { "nodes": [[59, 60, 61, 62, 63, 64], [76, 77, 78, 79, 80, 81]], "count": 6 },
+    "tech":       { "nodes": [66, 83], "prefix": "技术栈：" },
+    "github_url": { "nodes": [68, 85], "label_nodes": [67, 84] },
+    "demo_url":   { "nodes": [72, 89], "label_nodes": [70, 87] },
+    "skills":     { "nodes": [[90, 91, 92, 93, 94], [100, 101, 102, 103, 104]], "count": 5 },
+    "cert_text":  { "nodes": [97, 107], "bullet_nodes": [95, 105], "label_nodes": [96, 106], "clear_nodes": [[98, 99], [108, 109]] }
+  },
+
+  "fields": {
+    "name":   { "nodes": [11, 18], "mode": "after_colon" },
+    "ethnic": { "nodes": [13, 20], "mode": "after_colon" },
+    "phone":  { "nodes": [15, 22], "mode": "after_colon" },
+    "email":  { "nodes": [16, 23], "mode": "after_colon" },
+    "birth":  { "nodes": [24, 30], "mode": "after_colon" },
+    "hukou":  { "nodes": [25, 31], "mode": "after_colon" },
+    "school": { "nodes": [27, 33], "mode": "after_colon" },
+    "degree": { "nodes": [29, 35], "mode": "after_colon" },
+    "major":  { "nodes": [40, 46], "mode": "replace_all" },
+    "courses": { "nodes": [41, 47], "mode": "after_colon", "clear_nodes": [[42, 43], [48, 49]] }
+  },
+
+  "edu_line": { "nodes": [38, 44], "format": "{period}          {school}" }
+}

@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>简历定制器 · 贴 JD 出简历</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #0f1b2d;
+  --bg2: #14243c;
+  --card: #1b2e4a;
+  --card2: #21395a;
+  --line: #2d4768;
+  --accent: #3f7fd4;
+  --accent2: #5a9be0;
+  --gold: #e8b64c;
+  --green: #3fb96e;
+  --red: #e0584f;
+  --yellow: #e0a93f;
+  --txt: #e8eef6;
+  --txt2: #9db0c6;
+  --txt3: #6d8299;
+}
+
+html, body { height: 100%; }
+body {
+  font-family: "微软雅黑", "Microsoft YaHei", -apple-system, sans-serif;
+  background: radial-gradient(ellipse at 20% 0%, #1a2f4d 0%, var(--bg) 55%);
+  color: var(--txt);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ---------- 顶栏 ---------- */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 22px;
+  background: rgba(15,27,45,.85);
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 50;
+  backdrop-filter: blur(8px);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand .logo {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: bold; color: #fff;
+}
+.brand .t1 { font-size: 15px; font-weight: bold; letter-spacing: .5px; }
+.brand .t2 { font-size: 11px; color: var(--txt3); margin-top: -1px; }
+.topbar .status { font-size: 12px; color: var(--txt3); }
+.topbar .status b { color: var(--accent2); }
+
+/* ---------- 主区 ---------- */
+.wrap {
+  display: grid;
+  grid-template-columns: 440px 1fr;
+  gap: 16px;
+  padding: 16px 22px 60px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.card {
+  background: linear-gradient(160deg, var(--card) 0%, var(--card2) 100%);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+}
+.card h3 {
+  font-size: 14px; font-weight: bold; color: var(--txt);
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 12px;
+}
+.card h3 .num {
+  width: 20px; height: 20px; border-radius: 6px;
+  background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; flex-shrink: 0;
+}
+.card h3 .hint { font-size: 11px; color: var(--txt3); font-weight: normal; margin-left: auto; }
+
+textarea {
+  width: 100%; min-height: 260px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--txt);
+  font-family: inherit; font-size: 13px; line-height: 1.7;
+  resize: vertical; outline: none;
+  transition: border-color .2s;
+}
+textarea:focus { border-color: var(--accent); }
+textarea::placeholder { color: var(--txt3); }
+
+.input-row { margin-top: 12px; }
+.input-row label { display: block; font-size: 12px; color: var(--txt2); margin-bottom: 6px; }
+input[type=text] {
+  width: 100%;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--txt);
+  font-family: inherit; font-size: 13px;
+  outline: none;
+}
+input[type=text]:focus { border-color: var(--accent); }
+
+.btn-row { display: flex; gap: 10px; margin-top: 14px; }
+button {
+  flex: 1;
+  padding: 12px 18px;
+  border: none; border-radius: 9px;
+  font-family: inherit; font-size: 14px; font-weight: bold;
+  cursor: pointer; transition: all .18s;
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(63,127,212,.3);
+}
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(63,127,212,.42); }
+.btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+.btn-ghost {
+  flex: 0 0 auto;
+  background: var(--bg2); color: var(--txt2);
+  border: 1px solid var(--line); padding: 12px 16px;
+}
+.btn-ghost:hover { border-color: var(--accent); color: var(--txt); }
+
+/* ---------- 上传区 ---------- */
+.up {
+  position: relative;
+  border: 1.5px dashed var(--line);
+  border-radius: 10px;
+  padding: 20px 16px;
+  text-align: center;
+  transition: border-color .2s, background .2s;
+  cursor: pointer;
+}
+.up:hover { border-color: var(--accent); background: rgba(63,127,212,.05); }
+.up.has-file { border-style: solid; border-color: var(--green); background: rgba(63,185,110,.07); }
+.up input[type=file] {
+  position: absolute; inset: 0;
+  opacity: 0; cursor: pointer;
+  width: 100%;
+}
+.up-ico { font-size: 26px; margin-bottom: 6px; }
+.up-hint { font-size: 13px; color: var(--txt2); font-weight: 600; }
+.up.has-file .up-hint { color: var(--green); }
+.up-sub { font-size: 11.5px; color: var(--txt3); margin-top: 4px; line-height: 1.6; }
+
+/* ---------- 左列底部 ---------- */
+.tips {
+  margin-top: 14px; padding: 11px 13px;
+  background: rgba(63,127,212,.08);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  font-size: 12px; color: var(--txt2); line-height: 1.7;
+}
+.tips b { color: var(--accent2); }
+
+/* ---------- 右列 ---------- */
+.right { display: flex; flex-direction: column; gap: 16px; }
+
+/* 空状态 */
+.empty {
+  flex: 1; min-height: 320px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center; gap: 14px;
+}
+.empty .ico { font-size: 46px; opacity: .35; }
+.empty .txt { font-size: 14px; color: var(--txt2); }
+.empty .sub { font-size: 12px; color: var(--txt3); }
+
+/* 加载态 */
+.loading { text-align: center; padding: 46px 20px; }
+.spinner {
+  width: 40px; height: 40px; margin: 0 auto 16px;
+  border: 3px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading .lt { font-size: 14px; color: var(--txt2); }
+.loading .ls { font-size: 12px; color: var(--txt3); margin-top: 6px; }
+
+/* 错误态 */
+.errbox {
+  padding: 16px;
+  background: rgba(224,88,79,.1);
+  border: 1px solid rgba(224,88,79,.35);
+  border-radius: 10px;
+  font-size: 13px; color: #f0b4b0; line-height: 1.7;
+}
+.errbox b { display: block; margin-bottom: 6px; color: var(--red); }
+
+/* ---------- 匹配度卡 ---------- */
+.match-head {
+  display: flex; align-items: center; gap: 16px;
+  padding-bottom: 14px; border-bottom: 1px solid var(--line);
+  margin-bottom: 14px;
+}
+.score-ring {
+  position: relative;
+  width: 78px; height: 78px; flex-shrink: 0;
+}
+.score-ring svg { transform: rotate(-90deg); }
+.score-ring .val {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  font-size: 24px; font-weight: bold; line-height: 1;
+}
+.score-ring .val small { font-size: 10px; color: var(--txt3); font-weight: normal; }
+.match-meta { flex: 1; }
+.match-tag {
+  display: inline-block;
+  padding: 3px 11px; border-radius: 20px;
+  font-size: 12px; font-weight: bold; margin-bottom: 7px;
+}
+.tag-go { background: rgba(63,185,110,.16); color: var(--green); border: 1px solid rgba(63,185,110,.4); }
+.tag-mid { background: rgba(224,169,63,.16); color: var(--yellow); border: 1px solid rgba(224,169,63,.4); }
+.tag-no { background: rgba(224,88,79,.16); color: var(--red); border: 1px solid rgba(224,88,79,.4); }
+.match-summary { font-size: 13px; color: var(--txt2); line-height: 1.65; }
+
+.reqs { display: flex; flex-direction: column; gap: 7px; }
+.req {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 9px 11px; border-radius: 8px;
+  background: var(--bg2); font-size: 12.5px;
+}
+.req .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+.dot-matched { background: var(--green); box-shadow: 0 0 0 3px rgba(63,185,110,.15); }
+.dot-partial { background: var(--yellow); box-shadow: 0 0 0 3px rgba(224,169,63,.15); }
+.dot-missing { background: var(--red); box-shadow: 0 0 0 3px rgba(224,88,79,.15); }
+.req .body { flex: 1; }
+.req .body b { color: var(--txt); font-weight: 600; }
+.req .note { color: var(--txt3); font-size: 11.5px; margin-top: 1px; }
+
+/* ---------- 预览 ---------- */
+.preview {
+  background: #fff; color: #1a1a1a;
+  border-radius: 10px; padding: 26px 30px;
+  font-size: 13px;
+}
+.pv-name { font-size: 24px; font-weight: bold; color: #1f3b63; }
+.pv-obj { font-size: 14px; font-weight: bold; color: #2e5a8a; margin-top: 2px; }
+.pv-contact { font-size: 11.5px; color: #666; margin-top: 7px; line-height: 1.8; }
+.pv-sec {
+  background: #1f3b63; color: #fff;
+  padding: 4px 10px; font-size: 12.5px; font-weight: bold;
+  margin: 18px 0 9px; letter-spacing: 1px;
+}
+.pv-info { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; font-size: 12px; }
+.pv-info span { color: #444; }
+.pv-info span b { color: #888; font-weight: normal; margin-right: 6px; }
+.pv-item { margin-bottom: 8px; font-size: 12.5px; line-height: 1.7; }
+.pv-item .pname { font-weight: bold; color: #1f3b63; }
+.pv-bullet { color: #1f3b63; font-weight: bold; margin-right: 4px; }
+.pv-tech { font-size: 11.5px; color: #666; padding-left: 16px; margin: 4px 0 7px; }
+.pv-link { font-size: 11px; color: #2e5a8a; padding-left: 16px; word-break: break-all; }
+
+/* 改写说明 */
+.notes {
+  margin-top: 14px; padding: 11px 13px;
+  background: rgba(232,182,76,.08);
+  border-left: 3px solid var(--gold);
+  border-radius: 0 8px 8px 0;
+  font-size: 12px; color: var(--txt2); line-height: 1.7;
+}
+.notes b { color: var(--gold); }
+
+/* meta 行 */
+.metarow {
+  display: flex; flex-wrap: wrap; gap: 14px;
+  font-size: 11.5px; color: var(--txt3);
+  margin-top: 10px;
+}
+.metarow span b { color: var(--txt2); }
+
+/* 下载按钮 */
+.dl {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 22px; margin-top: 14px;
+  background: linear-gradient(135deg, var(--green), #2fa85e);
+  color: #fff; font-size: 14px; font-weight: bold;
+  border-radius: 9px; text-decoration: none;
+  box-shadow: 0 4px 14px rgba(63,185,110,.28);
+  transition: all .18s;
+}
+.dl:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(63,185,110,.4); }
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 980px) {
+  .wrap { grid-template-columns: 1fr; padding: 12px; }
+  .topbar { padding: 10px 14px; }
+  .preview { padding: 18px; }
+  .pv-info { grid-template-columns: 1fr; }
+  textarea { min-height: 200px; }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="logo">R</div>
+    <div>
+      <div class="t1">简历定制器</div>
+      <div class="t2">同一份项目，按岗位换角度重写</div>
+    </div>
+  </div>
+  <div class="status">模型：<b id="modelLabel">检测中…</b>
+    <button class="btn-ghost" id="settingsBtn" style="margin-left:10px;padding:5px 12px;font-size:12px"
+            onclick="openSettings()">设置</button>
+    <button class="btn-ghost" id="profileBtn" style="display:none;margin-left:6px;padding:5px 12px;font-size:12px"
+            onclick="openWizard()">我的资料</button>
+  </div>
+</div>
+
+<!-- ========== 模型 key 设置弹窗 ========== -->
+<div id="settingsModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;
+     align-items:center;justify-content:center">
+  <div class="card" style="width:560px;max-width:94vw;max-height:88vh;overflow:auto">
+    <h3><span class="num">⚙</span> 模型 key 设置
+      <span class="hint">key 存在你自己的电脑上，不会上传</span></h3>
+    <div style="font-size:12.5px;color:#9db0c6;line-height:1.8;margin-bottom:10px">
+      主模型推荐商汤 <b style="color:#e8eef6">sensenova</b>：官网
+      <span style="color:#5a9be0">https://platform.sensenova.cn</span> 注册后在控制台创建
+      API key（新用户有免费额度）。BASE_URL 填
+      <span style="color:#5a9be0">https://token.sensenova.cn/v1</span>，模型名
+      <span style="color:#5a9be0">sensenova-6.8-flash-lite</span>。
+      留空的输入框 = 保持现在的配置不变。
+    </div>
+    <div style="font-weight:bold;color:#5a9be0;margin:8px 0 2px">主模型（必填）</div>
+    <div class="input-row"><label>API Key <span id="stKeyTail" style="color:#6d8299"></span></label>
+      <input type="password" id="st_primary_key" placeholder=""></div>
+    <div class="input-row"><label>BASE_URL</label>
+      <input type="text" id="st_primary_base" placeholder="https://token.sensenova.cn/v1"></div>
+    <div class="input-row"><label>模型名</label>
+      <input type="text" id="st_primary_model" placeholder="sensenova-6.8-flash-lite"></div>
+    <div style="font-weight:bold;color:#5a9be0;margin:14px 0 2px">备用模型（选填，主模型限流时顶上）</div>
+    <div class="input-row"><label>API Key <span id="stBKeyTail" style="color:#6d8299"></span></label>
+      <input type="password" id="st_backup_key" placeholder=""></div>
+    <div class="input-row"><label>BASE_URL</label>
+      <input type="text" id="st_backup_base"></div>
+    <div class="input-row"><label>模型名</label>
+      <input type="text" id="st_backup_model"></div>
+    <div id="stStatus" style="margin:10px 0;font-size:12.5px;color:#9db0c6"></div>
+    <div class="btn-row">
+      <button class="btn-primary" id="stSave" onclick="saveSettings()">保存</button>
+      <button class="btn-ghost" onclick="testSettings()">测试连通</button>
+      <button class="btn-ghost" onclick="closeSettings()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- 上传你的简历 -->
+  <div class="card">
+    <h3>
+      <span class="num">0</span> 上传你的简历（可选）
+      <span class="hint">.docx / .txt / .md，≤8MB</span>
+    </h3>
+    <div class="up" id="upZone">
+      <input type="file" id="upFile" accept=".docx,.txt,.md" onchange="onPickFile(this)">
+      <div class="up-txt">
+        <div class="up-ico" id="upIco">📎</div>
+        <div class="up-hint" id="upHint">点这里选择你的简历文件</div>
+        <div class="up-sub" id="upSub">上传后会把它的内容一起喂给模型，作为本次定制的事实来源</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JD 输入 -->
+  <div class="card">
+    <h3>
+      <span class="num">1</span> 粘贴岗位描述
+      <span class="hint">JD 原文</span>
+    </h3>
+      <textarea id="jd" placeholder="把目标岗位的「岗位职责」和「任职要求」整段贴在这里。
+
+例：
+岗位职责：
+1. 负责 Web 前端页面的开发与维护
+2. 配合后端完成接口联调
+任职要求：
+1. 熟悉 HTML、CSS、JavaScript(ES6+)
+2. 有移动端适配经验者优
+3. 熟悉 Git 版本管理"></textarea>
+
+      <div class="input-row">
+        <label>2. 想强调的重点（可选）</label>
+        <input type="text" id="focus" placeholder="例：这个岗位比较看重移动端适配，多写这块">
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-primary" id="go" onclick="doGenerate()">生成定制简历</button>
+        <button class="btn-ghost" onclick="clearAll()">清空</button>
+      </div>
+
+      <div class="tips">
+        <b>它会做什么：</b>读你的基础简历 → 分析这个岗位偏哪个方向 →
+        重排项目模块顺序、删掉不相关的部分、关键词对齐 JD →
+        再打个匹配分告诉你值不值得投。<br>
+        <b>不会：</b>编造你没有的技能、实习或数字。
+      </div>
+
+  <!-- 右列 -->
+  <div class="right" id="right">
+    <div class="card empty">
+      <div class="ico">📄</div>
+      <div class="txt">左边贴好 JD，点「生成定制简历」</div>
+      <div class="sub">大概等 30~50 秒，模型在分析并重写</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ========== 首次配置向导（M2）========== -->
+<div id="wizardView" style="display:none">
+  <div class="wrap" style="grid-template-columns:1fr;max-width:860px">
+    <div class="card">
+      <h3><span class="num">0</span> 先建立你的个人档案
+        <span class="hint">解析约 1 分钟，之后每次生成都用它</span></h3>
+
+      <div class="up" id="wzUp">
+        <input type="file" id="wzFile" accept=".docx,.txt,.md" onchange="wzPick(this)">
+        <div class="up-txt">
+          <div class="up-ico" id="wzIco">📎</div>
+          <div class="up-hint" id="wzUpHint">点这里选择你现有的简历（推荐 .docx）</div>
+          <div class="up-sub" id="wzUpSub">它会自动解析出你的资料，并且<strong>用你简历自己的版式</strong>作为生成模板</div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-primary" id="wzAnalyze" onclick="wzAnalyze()">解析我的简历</button>
+        <button class="btn-ghost" onclick="wzShowForm(null, null)">跳过解析，手动填写</button>
+      </div>
+      <div id="wzStatus" style="margin-top:12px"></div>
+      <div id="wzForm" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+var $jd = document.getElementById('jd');
+var $focus = document.getElementById('focus');
+var $upZone = document.getElementById('upZone');
+var $upFile = document.getElementById('upFile');
+var $upIco = document.getElementById('upIco');
+var $upHint = document.getElementById('upHint');
+var $upSub = document.getElementById('upSub');
+var pickedFile = null;
+var $go = document.getElementById('go');
+var $right = document.getElementById('right');
+var $modelLabel = document.getElementById('modelLabel');
+
+/* file:// 检测：双击打开的页面连不上服务（fetch 被 CORS 拦，表现为 Failed to fetch）。
+   9/14 全天"网页用不了"就是这个，必须在页面上提前说人话，不能让用户对着报错猜。 */
+var IS_FILE_PROTO = (location.protocol === 'file:');
+
+function showFileProtoWarning() {
+  var banner = document.createElement('div');
+  banner.id = 'protoBanner';
+  banner.style.cssText = 'background:#e0584f;color:#fff;padding:13px 22px;font-size:14px;'
+    + 'line-height:1.9;font-weight:bold;';
+  banner.innerHTML =
+    '❌ 这个页面是被【双击打开】的（file:// 方式），这样连不上服务，点生成必定失败。<br>'
+    + '正确用法：① 双击文件夹里的 <b>启动.bat</b>（黑窗口保持开着，它就是服务器）　→　'
+    + '② 浏览器地址栏输入 <b>http://127.0.0.1:5050</b> 回车。';
+  document.body.insertBefore(banner, document.body.firstChild);
+  $go.disabled = true;
+  $go.textContent = '先按上方红色提示启动服务';
+  $modelLabel.textContent = '服务未启动';
+}
+
+if (IS_FILE_PROTO) showFileProtoWarning();
+
+var MODEL_NAMES = {
+  'deepseek-v4-flash': '商汤 deepseek-v4-flash',
+  'sensenova-6.8-flash-lite': '商汤 sensenova-6.8-flash-lite',
+  'mimo-v2.5': '小米 mimo-v2.5',
+  'gpt-6-astra': 'gpt-6-astra'
+};
+
+/* 当前用户档案（预览区不硬编码任何个人信息，全部来自 /api/profile） */
+var MY = { basic: {}, education: {}, certificates: [] };
+var MYFULL = null;          // 完整档案（编辑回填用）
+var wzTplName = null;       // 向导解析出的专属模板目录名
+var wzPickedFile = null;
+
+function routeByProfile() {
+  return fetch('/api/profile').then(function (r) { return r.json(); }).then(function (d) {
+    if (d && d.ok && d.exists) {
+      MYFULL = d.profile || {};
+      MY = { basic: MYFULL.basic || {}, education: MYFULL.education || {},
+             certificates: MYFULL.certificates || [] };
+      document.getElementById('profileBtn').style.display = '';
+      return 'main';
+    }
+    showWizard(null);
+    return 'wizard';
+  }).catch(function () {
+    document.getElementById('profileBtn').style.display = '';
+    return 'main';
+  });
+}
+
+routeByProfile();
+
+/* ---------- 向导（M2）---------- */
+
+function showWizard(prefill) {
+  document.querySelector('.wrap').style.display = 'none';
+  document.getElementById('wizardView').style.display = '';
+  if (prefill) wzShowForm(prefill.draft, prefill.template);
+}
+
+function openWizard() {
+  document.getElementById('wizardView').style.display = '';
+  document.querySelector('.wrap').style.display = 'none';
+  // 回填现有档案（编辑模式），规则等不显示的字段保存在 MYFULL 里，保存时带回去
+  wzShowForm(MYFULL ? JSON.parse(JSON.stringify(MYFULL)) : null, MYFULL ? { name: MYFULL.template } : null);
+}
+
+function wzPick(input) {
+  if (!input.files || !input.files.length) return;
+  wzPickedFile = input.files[0];
+  document.getElementById('wzIco').textContent = '✅';
+  document.getElementById('wzUpHint').textContent = wzPickedFile.name;
+  document.getElementById('wzUpSub').textContent = '已选择，点下方「解析我的简历」';
+}
+
+function wzAnalyze() {
+  if (!wzPickedFile) {
+    wzStatus('请先选择你的简历文件', 'err');
+    return;
+  }
+  var btn = document.getElementById('wzAnalyze');
+  btn.disabled = true;
+  wzStatus('<div class="ls" style="color:#9db0c6">解析中，大约 1 分钟（提取资料 + 识别你的简历版式）…</div>' +
+           '<div class="spinner" style="margin-top:10px"></div>');
+  var fd = new FormData();
+  fd.append('resume', wzPickedFile, wzPickedFile.name);
+  fetch('/api/wizard/analyze', { method: 'POST', body: fd })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      btn.disabled = false;
+      if (!d.ok) { wzStatus('解析失败：' + (d.error || ''), 'err'); return; }
+      wzTplName = d.template && d.template.status === 'ok' ? d.template.name : null;
+      var tplMsg = d.template
+        ? (d.template.status === 'ok'
+            ? (d.template.missing && d.template.missing.length
+                ? '⚠ ' + esc(d.template.message) + '　（可核对下面资料后继续，或换个更标准的 docx 简历重新上传）'
+                : '✅ ' + esc(d.template.message))
+            : '⚠ ' + esc(d.template.message || '版式未识别，先用内置模板'))
+        : '';
+      wzStatus('<div style="color:#3fb96e;font-size:13px;margin-bottom:6px">解析完成，请核对下面的资料（改错处）：</div>' +
+               (tplMsg ? '<div style="font-size:12px;color:#9db0c6;margin-bottom:10px">' + tplMsg + '</div>' : ''));
+      wzShowForm(d.profile_draft, d.template);
+    })
+    .catch(function (e) {
+      btn.disabled = false;
+      wzStatus('解析失败：' + e.message + '（确认服务还在运行）', 'err');
+    });
+}
+
+function wzStatus(html, kind) {
+  var el = document.getElementById('wzStatus');
+  el.innerHTML = kind === 'err'
+    ? '<div class="errbox"><b>出错了</b>' + esc(html) + '</div>'
+    : html;
+}
+
+function wzShowForm(draft, template) {
+  draft = draft || {};
+  wzTplName = (template && template.status === 'ok' && template.name) ? template.name
+            : (template && template.name ? template.name : wzTplName);
+  var b = draft.basic || {};
+  var e = draft.education || {};
+  var f = document.getElementById('wzForm');
+  f.style.display = '';
+  var rows = [];
+  function inp(id, label, val, ph, ta) {
+    rows.push('<div class="input-row"><label>' + label + '</label>' +
+      (ta
+        ? '<textarea id="' + id + '" style="min-height:70px" placeholder="' + (ph || '') + '">' + esc(val || '') + '</textarea>'
+        : '<input type="text" id="' + id + '" value="' + esc(val || '') + '" placeholder="' + (ph || '') + '">') +
+      '</div>');
+  }
+  rows.push('<div style="font-weight:bold;color:#5a9be0;margin:6px 0 2px">① 基本信息（带 * 必填）</div>');
+  inp('wz_name', '姓名 *', b.name); inp('wz_ethnic', '民族', b.ethnic);
+  inp('wz_phone', '电话', b.phone); inp('wz_email', '邮箱', b.email);
+  inp('wz_birth', '出生年月', b.birth, '例：2005.07'); inp('wz_hukou', '户籍', b.hukou);
+  inp('wz_degree', '学历', b.degree, '例：本科'); inp('wz_github', 'GitHub 主页', b.github);
+  inp('wz_demo', '项目演示地址', b.demo);
+  rows.push('<div style="font-weight:bold;color:#5a9be0;margin:14px 0 2px">② 教育背景</div>');
+  inp('wz_edu_period', '起止时间', e.period, '例：2023.07 - 2027.06');
+  inp('wz_edu_school', '学校', e.school); inp('wz_edu_major', '专业', e.major);
+  inp('wz_edu_courses', '主修课程', e.courses, '顿号分隔', true);
+  rows.push('<div style="font-weight:bold;color:#5a9be0;margin:14px 0 2px">③ 求职意向</div>');
+  inp('wz_obj', '默认求职意向', draft.objective_default, '例：Web 全栈开发 实习生');
+  rows.push('<div style="font-weight:bold;color:#5a9be0;margin:14px 0 2px">④ 项目经历（定制的主要原材料，至少 1 段；有实习、多段项目就都加进来）</div>');
+  rows.push('<div id="wzProjects"></div>');
+  rows.push('<button class="btn-ghost" style="width:100%;padding:8px;margin-bottom:6px" onclick="wzAddProject()">＋ 再添加一段项目</button>');
+  rows.push('<div style="font-weight:bold;color:#5a9be0;margin:14px 0 2px">⑤ 专业技能（一行一组，格式「分组：条目；条目」）</div>');
+  var skillLines = Object.keys(draft.skills || {}).map(function (g) {
+    return g + '：' + (draft.skills[g] || []).join('；');
+  }).join('\n');
+  inp('wz_skills', '技能分组', skillLines, '●前端：HTML/CSS/JavaScript；移动端适配', true);
+  rows.push('<div style="font-weight:bold;color:#5a9be0;margin:14px 0 2px">⑥ 证书 / 获奖（一行一条，可留空）</div>');
+  inp('wz_certs', '证书', (draft.certificates || []).join('\n'), '', true);
+  rows.push('<div style="font-weight:bold;color:#5a9be0;margin:14px 0 2px">⑦ 真实情况（用于诚实打分，不会被写进简历）</div>');
+  var sc = draft.scoring || {};
+  var scFacts = sc.facts || [];
+  inp('wz_score_edu', '学历情况', scFacts[0] || '', '例：民办本科在读（2027 毕业）');
+  inp('wz_score_intern', '实习情况', scFacts[1] || '', '例：无正式实习经历');
+  rows.push('<div class="btn-row"><button class="btn-primary" onclick="wzSave()">保存并开始使用</button></div>');
+  f.innerHTML = rows.join('');
+  (draft.projects && draft.projects.length ? draft.projects : [{}])
+    .forEach(function (p) { wzAddProject(p); });
+}
+
+/* 项目卡片：动态增删，每张卡片内的输入框用 data-f 标记字段名 */
+function wzProjCard(i, p) {
+  p = p || {}; var links = p.links || {};
+  function fin(f, label, val, ph, ta) {
+    return '<div class="input-row"><label>' + label + '</label>' +
+      (ta
+        ? '<textarea data-f="' + f + '" style="min-height:70px" placeholder="' + (ph || '') + '">' + esc(val || '') + '</textarea>'
+        : '<input type="text" data-f="' + f + '" value="' + esc(val || '') + '" placeholder="' + (ph || '') + '">') +
+      '</div>';
+  }
+  return '<div class="wz-proj" style="border:1px solid #2d4768;border-radius:10px;padding:12px;margin-bottom:10px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+    '<b style="color:#e8eef6">项目 ' + (i + 1) + '</b>' +
+    '<button class="btn-ghost" style="padding:4px 10px;font-size:11px" ' +
+    'onclick="this.closest(\'.wz-proj\').remove();window.wzRenumber()">删除此段</button></div>' +
+    fin('title', '项目名称 *', p.title) +
+    fin('role', '你的角色', p.role, '例：全栈开发') +
+    fin('period', '项目时间', p.period, '例：2026.07 至今') +
+    fin('github', '项目 GitHub', links.github) +
+    fin('demo', '项目演示', links.demo) +
+    fin('tech', '技术栈（逗号分隔）', (p.tech_stack || []).join('、'), '例：Python Flask, MySQL') +
+    fin('intro', '项目概述（一句话）', p.intro, '', true) +
+    fin('mods', '项目要点（一行一条，格式「模块名：做了什么」）',
+        (p.modules || []).map(function (m) { return m.name + '：' + m.default; }).join('\n'),
+        'AI 自主学习系统：把每局对局数据分桶记录，做数据驱动的策略修正', true) +
+    '</div>';
+}
+
+function wzAddProject(p) {
+  var box = document.getElementById('wzProjects');
+  var div = document.createElement('div');
+  div.innerHTML = wzProjCard(box.querySelectorAll('.wz-proj').length, p);
+  box.appendChild(div.firstChild);
+  wzRenumber();
+}
+
+function wzRenumber() {
+  document.querySelectorAll('#wzProjects .wz-proj').forEach(function (c, i) {
+    var t = c.querySelector('b');
+    if (t) t.textContent = '项目 ' + (i + 1);
+  });
+}
+
+function wzVal(id) {
+  var el = document.getElementById(id);
+  return el ? el.value.trim() : '';
+}
+
+/* ---------- 模型 key 设置（M4）---------- */
+
+function openSettings() {
+  document.getElementById('settingsModal').style.display = 'flex';
+  document.getElementById('stStatus').textContent = '';
+  fetch('/api/settings/llm').then(function (r) { return r.json(); }).then(function (d) {
+    if (!d || !d.ok) return;
+    var p = d.primary || {}, b = d.backup || {};
+    document.getElementById('st_primary_base').value = p.base || '';
+    document.getElementById('st_primary_model').value = p.model || '';
+    document.getElementById('st_backup_base').value = b.base || '';
+    document.getElementById('st_backup_model').value = b.model || '';
+    document.getElementById('st_primary_key').value = '';
+    document.getElementById('st_backup_key').value = '';
+    document.getElementById('st_primary_key').placeholder =
+      p.configured ? '已配置（尾号 ' + p.key_tail + '），留空则不修改' : '必填';
+    document.getElementById('st_backup_key').placeholder =
+      b.configured ? '已配置（尾号 ' + b.key_tail + '），留空则不修改' : '选填';
+  }).catch(function () {});
+}
+
+function closeSettings() {
+  document.getElementById('settingsModal').style.display = 'none';
+}
+
+function saveSettings() {
+  var body = {
+    primary: { api_key: wzVal('st_primary_key'), base: wzVal('st_primary_base'), model: wzVal('st_primary_model') },
+    backup:  { api_key: wzVal('st_backup_key'),  base: wzVal('st_backup_base'),  model: wzVal('st_backup_model') }
+  };
+  var st = document.getElementById('stStatus');
+  st.textContent = '保存中…';
+  fetch('/api/settings/llm', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    st.textContent = d.ok ? '✅ 已保存，立即生效' : '保存失败';
+    openSettings();
+  }).catch(function (e) { st.textContent = '保存失败：' + e.message; });
+}
+
+function testSettings() {
+  var st = document.getElementById('stStatus');
+  st.textContent = '测试中…（调一次模型，约 10~30 秒）';
+  fetch('/api/ping').then(function (r) { return r.json(); }).then(function (d) {
+    var p = d.primary || {}, b = d.backup || {};
+    var msg = [];
+    msg.push('主模型：' + (p.result && p.result[0] ? '✅ 连通正常' : '❌ 不通'));
+    msg.push('备用：' + (b.result && b.result[0] ? '✅ 连通正常' : '❌ 不通/未配'));
+    st.textContent = msg.join('　｜　') + '（耗时 ' + d.elapsed + ' 秒）';
+  }).catch(function (e) { st.textContent = '测试失败：' + e.message; });
+}
+
+function wzSave() {
+  var name = wzVal('wz_name');
+  if (!name) { wzStatus('姓名必填', 'err'); return; }
+
+  var projects = [];
+  document.querySelectorAll('#wzProjects .wz-proj').forEach(function (card) {
+    function v(f) {
+      var el = card.querySelector('[data-f="' + f + '"]');
+      return el ? el.value.trim() : '';
+    }
+    var mods = v('mods').split('\n').map(function (ln) {
+      ln = ln.trim(); if (!ln) return null;
+      var i = ln.indexOf('：'); if (i < 0) i = ln.indexOf(':');
+      if (i < 0) return { name: ln, core: false, default: '', angles: {} };
+      return { name: ln.slice(0, i).replace(/^●\s*/, '').trim(), core: false,
+               default: ln.slice(i + 1).trim(), angles: {} };
+    }).filter(Boolean);
+    projects.push({
+      title: v('title'), role: v('role'), period: v('period'),
+      links: { github: v('github'), demo: v('demo') },
+      intro: v('intro'), modules: mods,
+      tech_stack: v('tech').split(/[,，、]/).map(function (s) { return s.trim(); }).filter(Boolean)
+    });
+  });
+  projects = projects.filter(function (p) { return p.title; });
+  if (!projects.length) {
+    wzStatus('至少要有 1 段有名称的项目经历（这是定制的原材料）', 'err');
+    return;
+  }
+
+  var skills = {};
+  wzVal('wz_skills').split('\n').forEach(function (ln) {
+    ln = ln.trim(); if (!ln) return;
+    var i = ln.indexOf('：'); if (i < 0) i = ln.indexOf(':');
+    if (i < 0) { skills[ln] = []; return; }
+    skills[ln.slice(0, i).replace(/^●\s*/, '').trim()] =
+      ln.slice(i + 1).split(/[；;]/).map(function (s) { return s.trim(); }).filter(Boolean);
+  });
+  var certs = wzVal('wz_certs').split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+  var facts = [wzVal('wz_score_edu'), wzVal('wz_score_intern')].filter(Boolean);
+
+  var profile = {
+    basic: { name: name, ethnic: wzVal('wz_ethnic'), phone: wzVal('wz_phone'),
+             email: wzVal('wz_email'), birth: wzVal('wz_birth'), hukou: wzVal('wz_hukou'),
+             degree: wzVal('wz_degree'), github: wzVal('wz_github'), demo: wzVal('wz_demo') },
+    education: { period: wzVal('wz_edu_period'), school: wzVal('wz_edu_school'),
+                 major: wzVal('wz_edu_major'), courses: wzVal('wz_edu_courses') },
+    objective_default: wzVal('wz_obj'),
+    objective_candidates: (MYFULL && MYFULL.objective_candidates) || [],
+    projects: projects,
+    skills: skills,
+    certificates: certs,
+    rules: (MYFULL && MYFULL.rules) || { style_rules: [], tag_allow: [], tag_forbid: [] },
+    scoring: { facts: facts },
+    template: wzTplName || (MYFULL && MYFULL.template) || 'classic_blue'
+  };
+
+  wzStatus('保存中…');
+  fetch('/api/wizard/save', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile)
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (!d.ok) { wzStatus('保存失败：' + (d.error || ''), 'err'); return; }
+    wzStatus('✅ 已保存，正在进入工具…');
+    setTimeout(function () { location.reload(); }, 800);
+  }).catch(function (e) {
+    wzStatus('保存失败：' + e.message, 'err');
+  });
+}
+
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function scoreColor(score) {
+  if (score >= 75) return '#3fb96e';
+  if (score >= 55) return '#e0a93f';
+  return '#e0584f';
+}
+
+function tagClass(recommend) {
+  if (recommend && recommend.indexOf('值得') >= 0) return 'tag-go';
+  if (recommend && recommend.indexOf('建议不投') >= 0) return 'tag-no';
+  return 'tag-mid';
+}
+
+function renderLoading() {
+  $right.innerHTML =
+    '<div class="card"><div class="loading">' +
+    '<div class="spinner"></div>' +
+    '<div class="lt">正在分析 JD 并重写简历…</div>' +
+    '<div class="ls" id="ltHint">已提交到后台，通常需要 1~3 分钟</div>' +
+    '</div></div>';
+}
+
+function setWaitingText(sec) {
+  var h = document.getElementById('ltHint');
+  if (!h) return;
+  var tip;
+  if (sec < 180) {
+    tip = '模型正在分析 JD 并改写，通常 1~4 分钟';
+  } else if (sec < 420) {
+    tip = '模型在慢慢写，内容多的时候会比较久，属于正常波动';
+  } else {
+    tip = '这单比平时慢很多，有可能卡住了，等不及就点下面的按钮重新生成';
+  }
+  h.innerHTML = '后台生成中，<b>已等待 ' + sec + ' 秒</b>　·　' + tip
+              + '　·　刷新页面不会中断，回来会自动接着看结果';
+  if (sec >= 180) ensureGiveUpButton();
+}
+
+/* 等 3 分钟还没出的逃生门：不掐后端请求（9/10 踩过——掐断会把本来能成功的生成弄死），
+   而是让用户直接另起一单，旧单自动让位，不用干等到 10 分钟 */
+function ensureGiveUpButton() {
+  if (document.getElementById('giveUpBtn')) return;
+  var h = document.getElementById('ltHint');
+  if (!h) return;
+  var btn = document.createElement('button');
+  btn.id = 'giveUpBtn';
+  btn.style.cssText = 'margin-top:14px;padding:9px 18px;border:1px solid rgba(224,88,79,.5);'
+    + 'background:rgba(224,88,79,.12);color:#f0b4b0;border-radius:8px;'
+    + 'font-size:12.5px;cursor:pointer;font-family:inherit;';
+  btn.textContent = '不等了，重新生成一单';
+  btn.onclick = function () { pollSeq++; doGenerate(); };
+  h.parentNode.appendChild(btn);
+}
+
+function sleep(ms) {
+  return new Promise(function (r) { setTimeout(r, ms); });
+}
+
+/*
+ * 轮询任务状态。每个请求只花几十毫秒，不会因为长等待被掐断。
+ * 刷新页面后 sessionStorage 里还留着 task_id，重新进来会自动接着查。
+ */
+var pollSeq = 0;   // 轮询代次：点了"不等了，重新生成"就 +1，旧轮询自动退出让位
+
+async function pollTask(tid) {
+  var mySeq = pollSeq;
+  var t0 = Date.now();
+  var MAX = 16 * 60 * 1000;   // 最多等 16 分钟（后端读超时 900 秒，前端留点余量）
+  var lost = 0;
+
+  while (true) {
+    var d;
+    try {
+      var r = await fetch('/api/status/' + tid, { cache: 'no-store' });
+      d = await r.json();
+      lost = 0;
+    } catch (e) {
+      // 偶发网络抖动先忍几次，连续失败才报错
+      lost++;
+      if (lost >= 3) {
+        renderError('查不到进度：' + e.message +
+                    '（服务可能停了，重启服务后需要重新生成一次）');
+        return;
+      }
+      await sleep(2000);
+      continue;
+    }
+
+    if (mySeq !== pollSeq) return;   // 等待期间用户点了"重新生成"，这一单就不再管了
+
+    if (d.status === 'done') {
+      sessionStorage.removeItem('rz_task');
+      $modelLabel.textContent =
+        MODEL_NAMES[d.meta.model_used] || d.meta.model_used || '未知';
+      renderResult({ result: d.result, meta: d.meta }, d.meta);
+      return;
+    }
+    if (d.status === 'error') {
+      sessionStorage.removeItem('rz_task');
+      renderError(d.error || '生成失败');
+      return;
+    }
+    if (d.status === 'gone') {
+      sessionStorage.removeItem('rz_task');
+      renderError(d.error || '任务已失效，请重新生成');
+      return;
+    }
+
+    setWaitingText(Math.round((Date.now() - t0) / 1000));
+    if (Date.now() - t0 > MAX) {
+      sessionStorage.removeItem('rz_task');
+      renderError('超过 16 分钟还没出结果，已停止等待。请重试或换个模型。');
+      return;
+    }
+    await sleep(2000);
+  }
+}
+
+// 刷新后自动续上未跑完的任务
+window.addEventListener('load', function () {
+  var tid = sessionStorage.getItem('rz_task');
+  if (!tid) return;
+  if (!$jd.value && sessionStorage.getItem('rz_jd')) {
+    $jd.value = sessionStorage.getItem('rz_jd');
+  }
+  if (!$focus.value && sessionStorage.getItem('rz_focus')) {
+    $focus.value = sessionStorage.getItem('rz_focus');
+  }
+  $go.disabled = true;
+  $go.textContent = '生成中…';
+  renderLoading();
+  pollTask(tid).then(function () {
+    $go.disabled = false;
+    $go.textContent = '生成定制简历';
+  });
+});
+
+function renderError(msg) {
+  $right.innerHTML =
+    '<div class="card"><div class="errbox">' +
+    '<b>生成失败</b>' + esc(msg) +
+    '</div></div>';
+}
+
+function renderResult(data, meta) {
+  var r = data.result;
+  var m = r.match || {};
+  var score = (m.score === null || m.score === undefined || m.score === '') ? null : Number(m.score);
+  var col = scoreColor(score);
+  var pct = score === null ? 0 : Math.max(0, Math.min(100, score));
+  var circ = 2 * Math.PI * 34;
+  var dash = (pct / 100) * circ;
+
+  var html = '';
+
+  /* ---- 匹配度卡 ---- */
+  html += '<div class="card">';
+  html += '<h3><span class="num">3</span> 匹配度分析 <span class="hint">' + esc(r.fit || '') + '方向</span></h3>';
+  html += '<div class="match-head">';
+  html += '<div class="score-ring">';
+  html += '<svg width="78" height="78" viewBox="0 0 78 78">';
+  html += '<circle cx="39" cy="39" r="34" fill="none" stroke="#2d4768" stroke-width="7"></circle>';
+  html += '<circle cx="39" cy="39" r="34" fill="none" stroke="' + col + '" stroke-width="7" ' +
+          'stroke-linecap="round" stroke-dasharray="' + dash.toFixed(1) + ' ' + circ.toFixed(1) + '"></circle>';
+  html += '</svg>';
+  html += '<div class="val" style="color:' + col + '">' +
+          (score === null ? '—' : score) + '<small>分</small></div>';
+  html += '</div>';
+  html += '<div class="match-meta">';
+  html += '<span class="match-tag ' + tagClass(m.recommend) + '">' + esc(m.recommend || '未评估') + '</span>';
+  html += '<div class="match-summary">' + esc(m.summary || '') + '</div>';
+  html += '</div></div>';
+
+  if (m.requirements && m.requirements.length) {
+    html += '<div class="reqs">';
+    for (var i = 0; i < m.requirements.length; i++) {
+      var q = m.requirements[i];
+      var cls = q.status === 'matched' ? 'dot-matched' :
+                (q.status === 'partial' ? 'dot-partial' : 'dot-missing');
+      html += '<div class="req"><div class="dot ' + cls + '"></div><div class="body">' +
+              '<b>' + esc(q.item || '') + '</b>';
+      if (q.note) html += '<div class="note">' + esc(q.note) + '</div>';
+      html += '</div></div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+
+  /* ---- 预览 + 下载 ---- */
+  html += '<div class="card">';
+  html += '<h3><span class="num">4</span> 定制版简历 <span class="hint">可直接改 Word</span></h3>';
+
+  html += '<a class="dl" href="' + esc(meta.download_url) + '" download>⬇ 下载 Word 版</a>';
+
+  html += '<div class="preview">';
+  var mb = MY.basic || {};
+  html += '<div class="pv-name">' + esc(mb.name || '') + '</div>';
+  html += '<div class="pv-obj">' + esc(r.objective || '') + '</div>';
+  var contact = [];
+  if (mb.phone) contact.push('📱 ' + esc(mb.phone));
+  if (mb.email) contact.push('✉ ' + esc(mb.email));
+  if (mb.birth) contact.push('🎓 ' + esc(mb.birth));
+  html += '<div class="pv-contact">' +
+          '<div>' + contact.join('　｜　') + '</div>' +
+          (mb.github ? '<div>GitHub：' + esc(mb.github) + '</div>' : '') +
+          (r.project_links && r.project_links.demo
+            ? '<div>演示：' + esc(r.project_links.demo) + '</div>' : '') +
+          '</div>';
+
+  html += '<div class="pv-sec">基本信息</div>';
+  function infoRow(label, val) {
+    return val ? '<span><b>' + label + '</b>' + esc(val) + '</span>' : '';
+  }
+  html += '<div class="pv-info">' +
+          infoRow('姓名', mb.name) + infoRow('民族', mb.ethnic) +
+          infoRow('出生年月', mb.birth) + infoRow('户籍', mb.hukou) +
+          infoRow('毕业院校', (MY.education || {}).school) + infoRow('学历', mb.degree) +
+          '</div>';
+
+  html += '<div class="pv-sec">教育背景</div>';
+  var ed = MY.education || {};
+  html += '<div class="pv-item"><span class="pname">' +
+          esc(ed.period || '') + '　' + esc(ed.school || '') +
+          '　' + esc(ed.major || '') + '</span></div>';
+  if (ed.courses) html += '<div class="pv-tech">主修课程：' + esc(ed.courses) + '</div>';
+
+  html += '<div class="pv-sec">项目经历</div>';
+  html += '<div class="pv-item"><span class="pname">' + esc(r.project_title || '') +
+          '</span>　｜　' + esc(r.project_role || '') + '　｜　' + esc(r.project_period || '') + '</div>';
+  if (r.project_intro) html += '<div class="pv-tech">' + esc(r.project_intro) + '</div>';
+  if (r.modules && r.modules.length) {
+    for (var k = 0; k < r.modules.length; k++) {
+      html += '<div class="pv-item"><span class="pv-bullet">●</span>' +
+              '<span class="pname">' + esc(r.modules[k].name || '') + '：</span>' +
+              esc(r.modules[k].text || '') + '</div>';
+    }
+  }
+  if (r.tech_stack && r.tech_stack.length) {
+    html += '<div class="pv-tech">技术栈：' + esc(r.tech_stack.join('、')) + '</div>';
+  }
+
+  html += '<div class="pv-sec">专业技能</div>';
+  if (r.skill_groups && r.skill_groups.length) {
+    for (var s = 0; s < r.skill_groups.length; s++) {
+      var g = r.skill_groups[s];
+      if (!g.items || !g.items.length) continue;
+      html += '<div class="pv-item"><span class="pv-bullet">●</span>' +
+              '<span class="pname">' + esc(g.group || '') + '：</span>' +
+              esc(g.items.join('；')) + '</div>';
+    }
+  } else if (r.skill_lines && r.skill_lines.length) {
+    for (var s2 = 0; s2 < r.skill_lines.length; s2++) {
+      html += '<div class="pv-item">' + esc(r.skill_lines[s2]) + '</div>';
+    }
+  }
+  if (MY.certificates && MY.certificates.length) {
+    html += '<div class="pv-item"><span class="pv-bullet">●</span>' +
+            '<span class="pname">证书：</span>' +
+            esc(MY.certificates.join(' / ')) + '</div>';
+  }
+  html += '</div>';
+
+  if (r.rewrite_notes) {
+    html += '<div class="notes"><b>本次改了什么：</b>' + esc(r.rewrite_notes) + '</div>';
+  }
+
+  html += '<div class="metarow">' +
+          '<span>耗时 <b>' + esc(meta.elapsed || '?') + ' 秒</b></span>' +
+          '<span>模型 <b>' + esc(MODEL_NAMES[meta.model_used] || meta.model_used || '?') + '</b></span>' +
+          (meta.usage ? '<span>Token <b>' + esc(meta.usage.total_tokens || '?') + '</b></span>' : '') +
+          (meta.uploaded ? '<span class="meta-up">📄 素材 <b>' + esc(meta.uploaded) + '</b></span>'
+                         : '<span>素材 <b>内置简历</b></span>') +
+          '<span>文件 <b>' + esc(meta.file || '') + '</b></span>' +
+          '</div>';
+
+  html += '</div>';
+  $right.innerHTML = html;
+}
+
+function onPickFile(input) {
+  if (!input.files || !input.files.length) return;
+  var f = input.files[0];
+  pickedFile = f;
+  $upZone.classList.add('has-file');
+  $upIco.textContent = '✅';
+  var size = f.size < 1024 * 1024
+    ? (f.size / 1024).toFixed(1) + ' KB'
+    : (f.size / 1024 / 1024).toFixed(2) + ' MB';
+  $upHint.textContent = f.name;
+  $upSub.textContent = '已选择 ' + size + '　·　点击可重新选择';
+}
+
+function resetUpload() {
+  pickedFile = null;
+  $upFile.value = '';
+  $upZone.classList.remove('has-file');
+  $upIco.textContent = '📎';
+  $upHint.textContent = '点这里选择你的简历文件';
+  $upSub.textContent = '上传后会把它的内容一起喂给模型，作为本次定制的事实来源';
+}
+
+async function doGenerate() {
+  if (IS_FILE_PROTO) {
+    renderError('你是双击打开的本页面（file://），这样连不上服务。'
+      + '请双击 启动.bat 起服务，再用浏览器打开 http://127.0.0.1:5050');
+    return;
+  }
+  var jd = $jd.value.trim();
+  var focus = $focus.value.trim();
+  if (jd.length < 20) {
+    renderError('岗位描述太短了，至少把「任职要求」那几行贴进来（当前 ' + jd.length + ' 字）。');
+    return;
+  }
+  $go.disabled = true;
+  $go.textContent = '生成中…';
+  renderLoading();
+
+  try {
+    var fd = new FormData();
+    fd.append('jd', jd);
+    fd.append('focus', focus);
+    if (pickedFile) {
+      fd.append('resume', pickedFile, pickedFile.name);
+    }
+    var resp = await fetch('/api/generate', {
+      method: 'POST',
+      body: fd
+    });
+    var data = await resp.json();
+
+    if (!data.ok) {
+      renderError(data.error || '提交失败');
+      return;
+    }
+    // 记住 task_id，刷新页面也能接着查
+    sessionStorage.setItem('rz_task', data.task_id);
+    sessionStorage.setItem('rz_jd', jd);
+    sessionStorage.setItem('rz_focus', focus);
+    await pollTask(data.task_id);
+  } catch (e) {
+    renderError('提交失败：' + e.message + '（确认服务还在运行）');
+  } finally {
+    $go.disabled = false;
+    $go.textContent = '生成定制简历';
+  }
+}
+
+function clearAll() {
+  pollSeq++;             // 清空 = 真的不要了，旧轮询别再把结果刷回来
+  $jd.value = '';
+  $focus.value = '';
+  $right.innerHTML =
+    '<div class="card empty">' +
+    '<div class="ico">📄</div>' +
+    '<div class="txt">左边贴好 JD，点「生成定制简历」</div>' +
+    '<div class="sub">大概等 30~120 秒，模型在分析并重写</div>' +
+    '</div>';
+}
+</script>
+
+</body>
+</html>
