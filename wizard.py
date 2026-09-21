@@ -208,6 +208,7 @@ def build_user_template(docx_path, original_name=""):
     cfg["display_name"] = original_name or "用户上传模板"
     cfg["docx"] = "模板.docx"
     cfg["min_nodes"] = len(ts)
+    cfg["content_box_cx"] = _content_box_cx(ts, cfg)
     with open(os.path.join(d, "template.json"), "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
     msg = "已按你上传的简历版式建立专属模板"
@@ -268,6 +269,51 @@ def normalize_profile(d):
 # 映射校验：下标越界/一址多写/套内数量不一致都要修，修不动的整体回退
 # ---------------------------------------------------------------------------
 
+def _content_node_idxs(cfg, n_nodes):
+    """多行内容区（项目要点、专业技能）用到的文字节点下标。
+    只有这两块的内容条数会变、需要顶部对齐；求职意向/技术栈/标题都是单行，
+    它们的框保持原稿的对齐方式，基本信息和教育背景更不该动。"""
+    out = set()
+
+    def add(x):
+        for i in _flatten(x):
+            if 0 <= i < n_nodes:
+                out.add(i)
+
+    slots = cfg.get("slots") or {}
+    for k in ("modules", "skills"):
+        v = slots.get(k)
+        if isinstance(v, dict):
+            add(v.get("nodes"))
+    return out
+
+
+WPS_WSP = "{%s}wsp" % template_export.WPS_NS
+A_EXT = "{%s}ext" % template_export.A_NS
+
+
+def _content_box_cx(ts, cfg):
+    """取映射节点所在形状（wps:wsp）的宽度 cx，写进模板包配置。
+    template_export 靠它把内容框改成顶部对齐；缺了这个键，用户专属模板
+    就会出现"内容比原稿少、文字在框里上下悬空"的排版问题——内置模板有、
+    用户上传的没有，正是这里漏的。"""
+    cxs = set()
+    for i in _content_node_idxs(cfg, len(ts)):
+        el = ts[i].getparent()
+        while el is not None:
+            if el.tag == WPS_WSP:
+                for e in el.iter(A_EXT):        # 和 _top_align 取同一个 ext
+                    if e.get("cx") and e.get("cy"):
+                        try:
+                            cxs.add(int(e.get("cx")))
+                        except (TypeError, ValueError):
+                            pass
+                        break
+                break
+            el = el.getparent()
+    return sorted(cxs)
+
+
 def _validate_mapping(mapping, n_nodes):
     warnings = []
     clean = {"slots": {}, "fields": {}, "edu_line": None}
@@ -276,29 +322,54 @@ def _validate_mapping(mapping, n_nodes):
         return isinstance(i, int) and 0 <= i < n_nodes
 
     # 先把所有 entries 收集成 (键路径, 下标列表)，查冲突。
-    # fields 兼容两种形态：扁平列表 [11,18] 或 {"nodes":[11,18]}（LLM 偶尔会包一层）
     entries = []          # (owner_key, [idx...])
+
+    # edu_line 排在最前登记：引擎是先写 fields 再写 edu_line，同一节点被两者
+    # 列到时以 edu_line 为准（它是"时间 + 院校"合成行，信息量更大）。
+    # 早先这里漏登记，README 承诺的"一址多写校验"对 edu_line 根本无效。
+    el = mapping.get("edu_line")
+    if isinstance(el, dict) and isinstance(el.get("nodes"), list):
+        entries.append(("edu_line", el["nodes"]))
+
+    # fields 兼容两种形态：扁平列表 [11,18] 或 {"nodes":[11,18], "mode":..., "clear_nodes":...}
+    # （LLM 一般给扁平列表；mode/clear_nodes 只有人工微调过的模板包会有，必须原样带过去，
+    #   否则模板包过一次校验就被改写成清一色 after_colon、把碎片清空节点丢掉）
     norm_fields = {}
     for k, v in (mapping.get("fields") or {}).items():
+        rmode = rclear = None
         if isinstance(v, dict) and isinstance(v.get("nodes"), list):
+            rmode, rclear = v.get("mode"), v.get("clear_nodes")
             v = v["nodes"]
         if isinstance(v, list) and v:
-            norm_fields[k] = v
+            norm_fields[k] = (v, rmode, rclear)
             entries.append((f"fields.{k}", v))
+            if isinstance(rclear, list):
+                for grp in rclear:
+                    if isinstance(grp, list):
+                        entries.append((f"fields.{k}.clear", grp))
     slots = mapping.get("slots") or {}
+    cert = mapping.get("cert_text")
+    if not isinstance(cert, dict):
+        # 有人（和某些模型）会把 cert_text 塞进 slots 里——存储格式就是那样的，两种都收
+        inner = slots.get("cert_text")
+        cert = inner if isinstance(inner, dict) else {}
     for k, v in slots.items():
-        if not isinstance(v, dict):
+        if k == "cert_text" or not isinstance(v, dict):
             continue
         for kk in ("nodes", "label_nodes", "bullet_nodes"):
             if isinstance(v.get(kk), list):
                 entries.append((f"slots.{k}.{kk}", v[kk]))
-        for kk, vv in (v.get("clear_nodes") or {}).items() if isinstance(v.get("clear_nodes"), dict) else []:
-            entries.append((f"slots.{k}.{kk}", vv))
-    cert = mapping.get("cert_text") or {}
     if isinstance(cert, dict):
         for kk in ("nodes", "label_nodes", "bullet_nodes"):
             if isinstance(cert.get(kk), list):
                 entries.append((f"cert_text.{kk}", cert[kk]))
+        # clear_nodes 是"和正文同行的碎片标签/分隔符"，会被真的写空，
+        # 所以它的下标也要进冲突表，否则可能和别的区域抢同一个节点
+        cl = cert.get("clear_nodes")
+        if isinstance(cl, list):
+            for grp in cl:
+                if isinstance(grp, list):
+                    entries.append(("cert_text.clear", grp))
 
     # 展开成 idx → 首次出现的 owner；重复出现的记冲突
     owner = {}
@@ -321,16 +392,23 @@ def _validate_mapping(mapping, n_nodes):
         return out
 
     # fields（统一用规范化后的 norm_fields）
-    for k, v in norm_fields.items():
+    for k, (v, rmode, rclear) in norm_fields.items():
         got = scrub(v, f"fields.{k}")
-        if got:
-            clean["fields"][k] = {"nodes": got, "mode": "after_colon"}
-        else:
+        if not got:
             warnings.append(f"fields.{k} 下标无效，已忽略")
+            continue
+        conf = {"nodes": got,
+                "mode": rmode if isinstance(rmode, str) and rmode else "after_colon"}
+        if isinstance(rclear, list):
+            groups = [scrub(g, f"fields.{k}.clear") for g in rclear if isinstance(g, list)]
+            groups = [g for g in groups if g]
+            if groups:
+                conf["clear_nodes"] = groups
+        clean["fields"][k] = conf
 
-    # slots
+    # slots（cert_text 单独在下面按自己的结构处理，这里跳过）
     for k, v in slots.items():
-        if not isinstance(v, dict):
+        if k == "cert_text" or not isinstance(v, dict):
             continue
         entry = {}
         nodes = v.get("nodes")
@@ -390,11 +468,12 @@ def _validate_mapping(mapping, n_nodes):
                     entry["clear_nodes"] = g
             clean["slots"]["cert_text"] = entry
 
-    # edu_line
-    el = mapping.get("edu_line")
+    # edu_line（el 已在上面登记冲突表时取出）
     if isinstance(el, dict) and isinstance(el.get("nodes"), list):
         got = scrub(el["nodes"], "edu_line")
-        fmt = el.get("format") or "{period}          {school}"
+        fmt = el.get("format")
+        if not isinstance(fmt, str) or not fmt.strip():
+            fmt = "{period}          {school}"
         if got and "{period}" in fmt and "{school}" in fmt:
             clean["edu_line"] = {"nodes": got, "format": fmt}
 

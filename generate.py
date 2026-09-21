@@ -38,13 +38,27 @@ from profile_store import load_profile
 #   取 32000：比 20000 大（保证正文写得出来），又远低于 65536（避免思考失控超时）。
 MAX_TOKENS = 32000
 
-# 技术栈兜底补充顺序（按"通用性"排序；只作为筛选器，实际只会补
-# 用户档案 tech_stack 里确实存在的项，绝不无中生有）
-TECH_FILL_PRIORITY = [
-    "RESTful API", "GitHub Actions CI/CD", "Docker", "腾讯云 CloudBase",
-    "RAG / LLM 集成", "Python Flask", "MySQL / SQLite",
-    "JavaScript (ES6+)", "HTML / CSS / JavaScript (ES6+)",
-]
+# 技术栈保底：模型偶尔只给 2~3 项，简历显得单薄。补足时【只补与岗位方向同类的项】，
+# 因为补错方向比少列几项更糟——投前端却列出 Docker/数据库，面试官会认为你没有专精方向。
+# 候选一律取自项目真实 tech_stack，绝不无中生有。
+TECH_DIRECTION_KEYWORDS = {
+    "前端": ["html", "css", "javascript", "typescript", "es6", "react", "vue",
+             "spa", "pwa", "响应式", "适配", "动画", "交互", "小程序",
+             "webpack", "vite", "echarts", "浏览器"],
+    "后端": ["python", "flask", "django", "fastapi", "java", "golang", "node",
+             "mysql", "postgres", "sqlite", "redis", "mongodb", "接口", "api",
+             "restful", "鉴权", "权限", "并发", "缓存", "数据库", "orm", "爬虫"],
+    "ai应用": ["llm", "rag", "prompt", "embedding", "向量", "agent", "langchain",
+               "模型", "推理", "token", "对话", "助手", "微调"],
+    "数据": ["etl", "管道", "pandas", "numpy", "sql", "数仓", "可视化", "图表",
+             "spark", "hive", "清洗", "指标", "报表"],
+    "测试": ["pytest", "unittest", "用例", "自动化测试", "接口测试", "selenium",
+             "覆盖率", "压测", "性能测试"],
+    "运维": ["docker", "kubernetes", "k8s", "ci", "cd", "github actions", "jenkins",
+             "nginx", "linux", "shell", "部署", "监控", "日志", "云服务", "云部署"],
+}
+
+TECH_FILL_MIN = 4
 
 # ---------------------------------------------------------------------------
 # 事实源序列化：只把"事实"喂给模型，不给它发挥空间
@@ -72,11 +86,15 @@ def _profile_to_text(profile):
         lines.append("可选意向： " + " / ".join(p["objective_candidates"]))
 
     lines.append("\n【项目经历】")
-    for pr in p.get("projects", []):
+    for pr in p.get("projects") or []:
+        if not isinstance(pr, dict):
+            continue
         lines.append(f"- {pr.get('title', '')}｜{pr.get('role', '')}｜{pr.get('period', '')}")
         if pr.get("intro"):
             lines.append(f"  概述：{pr['intro']}")
-        for m in pr.get("modules", []):
+        for m in pr.get("modules") or []:
+            if not isinstance(m, dict):
+                continue
             tag = "【核心】" if m.get("core") else "  "
             lines.append(f"  {tag}{m.get('name', '')}")
             if m.get("default"):
@@ -84,11 +102,11 @@ def _profile_to_text(profile):
             for ang_name, ang_text in (m.get("angles") or {}).items():
                 lines.append(f"      [{ang_name}角度] {ang_text}")
         if pr.get("tech_stack"):
-            lines.append("  技术栈：" + "、".join(pr["tech_stack"]))
+            lines.append("  技术栈：" + "、".join(str(t) for t in pr["tech_stack"]))
 
     lines.append("\n【专业技能库】（按 JD 需要重排/筛选，禁止新增）")
-    for group, items in (p.get("skills") or {}).items():
-        lines.append(f"- {group}：" + "；".join(items))
+    for group, items in _skills_as_dict(p).items():
+        lines.append(f"- {group}：" + "；".join(str(i) for i in (items or [])))
 
     if p.get("certificates"):
         lines.append("\n【证书】（由系统单独写入证书栏，不要写进技能清单）")
@@ -224,7 +242,8 @@ def _build_user_prompt(jd_text, focus_hint, extra_material="", profile=None):
         "      严禁出现数据库优化、鉴权方案、容器化部署等后端项。\n"
         "    · 投 AI 应用 → 只留 LLM 集成、RAG、数据管道、Python 这类。\n"
         "    · 投全栈 → 前端、后端各留 2~3 项，两边都必须出现，不要只剩一边。\n"
-        "    · 宁可少列，也绝对不要全列 —— 把 9 项全列出来，面试官会认为你没有专精方向。\n"
+        "    · 宁可少列，也绝对不要全列 —— 把档案里的技术栈原样全列出来，"
+        "面试官会认为你没有专精方向。\n"
         "  - 求职意向：**JD 里写了明确职位名时，直接照抄 JD 的职位名**（按需补上\"实习生\"字样，20 字内），\n"
         "    禁止换成可选意向里的其他叫法；JD 没写职位名时，才从可选意向里选最贴的那个，20 字内。\n"
         "  - project_role：写本项目里对应的岗位角色，如「前端开发」「后端开发（Python）」。\n\n"
@@ -263,6 +282,54 @@ def _scoring_text(profile):
 # 容错解析
 # ---------------------------------------------------------------------------
 
+def _tech_bucket(fit):
+    """把模型给的岗位方向（可能是"前端开发"/"AI 应用"/"全栈"）归到候选词桶。
+    认不出方向就返回空桶——不补，比补错方向安全。"""
+    f = re.sub(r"[\s/／]+", "", (fit or "").lower())
+    if not f:
+        return []
+    if "全栈" in f:
+        return ["前端", "后端"]
+    names = []
+    if "ai" in f or "大模型" in f or "人工智能" in f:
+        names.append("ai应用")
+    for name in ("前端", "后端", "数据", "测试", "运维"):
+        if name in f:
+            names.append(name)
+    return names
+
+
+def _tech_hit(item_low, words):
+    """英文关键词必须整词匹配，否则 "java" 会命中 "javascript"、"go" 会命中 "django"，
+    把前端项补进后端简历（正是要避免的那种污染）。中文没有词边界问题，直接子串匹配。"""
+    for w in words:
+        if w.isascii():
+            if re.search(r"(?<![a-z0-9])" + re.escape(w) + r"(?![a-z0-9])", item_low):
+                return True
+        elif w in item_low:
+            return True
+    return False
+
+
+def _pad_tech(ts, real_tech, fit):
+    """技术栈不足 TECH_FILL_MIN 项时，按岗位方向从项目真实技术栈里补同类项。
+    补的全是档案里确实用过的项，只是模型偶尔给太少。"""
+    out = list(ts) if isinstance(ts, list) else []
+    if len(out) >= TECH_FILL_MIN:
+        return out
+    words = [w for name in _tech_bucket(fit) for w in TECH_DIRECTION_KEYWORDS[name]]
+    if not words:
+        return out
+    for item in (real_tech or []):
+        if len(out) >= TECH_FILL_MIN:
+            break
+        if item in out:
+            continue
+        if _tech_hit(str(item).lower(), words):
+            out.append(item)
+    return out
+
+
 def _extract_json(text, profile):
     """
     解析模型输出的 JSON。
@@ -276,7 +343,9 @@ def _extract_json(text, profile):
 
     try:
         obj = json.loads(t)
-        return obj if isinstance(obj, dict) else None
+        # 正常输出也要过一遍 _fill：补默认值 + 方向内保底技术栈，
+        # 之前只有截断分支过 _fill，等于这些保底对绝大多数请求根本没生效。
+        return _fill(obj, profile) if isinstance(obj, dict) else None
     except Exception:
         pass
 
@@ -307,35 +376,31 @@ def _fill(obj, profile):
         }
     # 模板要求 6 条要点 / 5 条技能，缺了就用基础素材补
     if not obj.get("project_points"):
-        obj["project_points"] = ["●" + m["name"] + "：" + m["default"]
-                                 for m in pr.get("modules", [])]
+        obj["project_points"] = ["●" + str(m.get("name", "")) + "：" + str(m.get("default", ""))
+                                 for m in pr.get("modules", []) if isinstance(m, dict)]
     if not obj.get("skill_lines"):
         # 证书组不进技能清单（由系统单独写入证书栏），最多取 5 组
-        groups = [(g, items) for g, items in (profile.get("skills") or {}).items()
+        groups = [(g, items) for g, items in (_skills_as_dict(profile)).items()
                   if "证书" not in g][:5]
-        obj["skill_lines"] = ["●" + g + "：" + "；".join(items)
+        obj["skill_lines"] = ["●" + g + "：" + "；".join(str(i) for i in items)
                               for g, items in groups]
-    obj.setdefault("rewrite_notes", "（模型输出被截断，说明缺失）")
+    obj.setdefault("rewrite_notes", "（模型未说明本次改了什么）")
     obj.setdefault("project_title", pr.get("title", ""))
     obj.setdefault("project_role", pr.get("role", ""))
     obj.setdefault("project_links", pr.get("links", {}))
     obj.setdefault("tech_stack", pr.get("tech_stack", []))
-    # 技术栈不足 4 项时用项目真实技术栈补足 —— 不是编造，都是项目确实用过的，
-    # 只是模型偶尔给太少（实测出现过只给 2 项，简历看着单薄）
-    ts = list(obj.get("tech_stack") or [])
-    if len(ts) < 4:
-        # 按"通用性"补：RESTful / CI/CD 这类对任何岗位都合适，
-        # 避免给前端岗补上 Python Flask、MySQL 这种后端专属项
-        real = set(pr.get("tech_stack") or [])
-        for t in TECH_FILL_PRIORITY:
-            if t not in ts and t in real:
-                ts.append(t)
-            if len(ts) >= 4:
-                break
-        obj["tech_stack"] = ts
+    # 技术栈保底必须在 fit 兜底成"全栈"之前做：否则模型没给方向时会被当成全栈，
+    # 把后端项补进一份前端简历里。
+    obj["tech_stack"] = _pad_tech(obj["tech_stack"], pr.get("tech_stack") or [],
+                                  obj.get("fit"))
     obj.setdefault("fit", "全栈")
     obj.setdefault("objective", profile.get("objective_default", ""))
     return obj
+
+
+def _skills_as_dict(profile):
+    sk = profile.get("skills")
+    return sk if isinstance(sk, dict) else {}
 
 
 def _fallback_result(error, profile):
@@ -343,11 +408,11 @@ def _fallback_result(error, profile):
     projects = profile.get("projects") or [{}]
     pr = projects[0]
     # 档案里的模块 / 技能组直接拼成模板要的 6+5 条（证书组除外）
-    points = ["●" + m["name"] + "：" + m.get("default", "")
-              for m in pr.get("modules", [])]
-    groups = [(g, items) for g, items in (profile.get("skills") or {}).items()
+    points = ["●" + str(m.get("name", "")) + "：" + str(m.get("default", ""))
+              for m in pr.get("modules", []) if isinstance(m, dict)]
+    groups = [(g, items) for g, items in _skills_as_dict(profile).items()
               if "证书" not in g][:5]
-    skills = ["●" + g + "：" + "；".join(items) for g, items in groups]
+    skills = ["●" + g + "：" + "；".join(str(i) for i in items) for g, items in groups]
     return {
         "fit": "全栈",
         "objective": profile.get("objective_default", ""),

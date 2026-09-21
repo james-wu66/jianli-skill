@@ -120,7 +120,11 @@ def index():
 @app.route("/api/profile", methods=["GET"])
 def api_profile():
     """前端拿当前档案的完整信息（向导编辑页也用它回填）。"""
-    p = profile_store.load_profile()
+    try:
+        p = profile_store.load_profile()
+    except ValueError as e:
+        # 手写档案最常见的就是 JSON 语法错，直接把文件定位报给人看
+        return jsonify({"ok": False, "error": str(e)}), 400
     if not p:
         return jsonify({"ok": True, "exists": False})
     return jsonify({"ok": True, "exists": True, "profile": p})
@@ -386,7 +390,10 @@ def api_generate():
                 pass
 
     # 无档案时给出可操作的错误（引导完成首次配置，M2 会做向导页）
-    profile = profile_store.load_profile()
+    try:
+        profile = profile_store.load_profile()
+    except ValueError as e:
+        return jsonify({"ok": False, "error": f"个人档案读不了：{e}"}), 400
     if not profile:
         return jsonify({"ok": False,
                         "error": "还没有个人档案。请先把你的资料 JSON 放进 profiles/ 目录"

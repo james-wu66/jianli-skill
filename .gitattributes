@@ -1,0 +1,13 @@
+# 仓库内统一存 LF；签出时按类型决定，避免换行符随 clone 平台漂移
+* text=auto eol=lf
+
+# Windows 批处理必须是 CRLF，否则 cmd 可能解析异常（启动.bat 还是故意用 GBK 存的）
+*.bat text eol=crlf
+
+# Office / 图片压缩包，绝不能做换行符与编码转换
+*.docx binary
+*.zip binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary

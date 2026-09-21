@@ -60,8 +60,13 @@ def load_profile(name=None):
     path = os.path.join(PROFILES_DIR, name)
     if not os.path.isfile(path):
         raise FileNotFoundError(f"档案文件不存在：{path}")
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"档案 {name} 不是合法 JSON：第 {e.lineno} 行 {e.msg}") from e
+    if not isinstance(data, dict):
+        raise ValueError(f"档案 {name} 最外层必须是一个 JSON 对象")
     _ensure_defaults(data)
     data["_file"] = name          # 内部字段：来源文件名
     return data
@@ -80,25 +85,55 @@ def save_profile(name, data):
 
 
 def _ensure_defaults(p):
-    """补齐缺失键，保证引擎各处 .get / 下标访问不炸。"""
-    p.setdefault("basic", {})
-    p.setdefault("education", {})
-    p.setdefault("objective_default", "")
-    p.setdefault("objective_candidates", [])
-    p.setdefault("projects", [])
-    p.setdefault("skills", {})
-    p.setdefault("certificates", [])
-    p.setdefault("rules", {})
-    p.setdefault("scoring", {})
-    p.setdefault("template", None)
-    p["rules"].setdefault("style_rules", [])
-    p["rules"].setdefault("tag_allow", [])
-    p["rules"].setdefault("tag_forbid", [])
-    p["scoring"].setdefault("facts", [])
-    if p["projects"]:
-        p["projects"][0].setdefault("links", {})
-        p["projects"][0].setdefault("period", "")
-        p["projects"][0].setdefault("tech_stack", [])
+    """补齐缺失键【并矫正类型】。
+
+    档案 JSON 完全可以手写（README 就推荐这条路），而这条路不过
+    wizard.normalize_profile，所以类型兜底只能在这里做。之前只做了
+    setdefault——键存在但值是 null / 列表时照样往下传，最后在引擎深处
+    以 AttributeError 的形式炸出来（rules: null 实测会崩）。
+    """
+    for key, blank in (("basic", {}), ("education", {}), ("skills", {}),
+                       ("certificates", []), ("objective_candidates", []),
+                       ("projects", [])):
+        if not isinstance(p.get(key), type(blank)):
+            p[key] = {} if blank == {} else []
+    if not isinstance(p.get("objective_default"), str):
+        p["objective_default"] = ""
+    if not isinstance(p.get("template"), str) or not p.get("template"):
+        p["template"] = None
+
+    rules = p["rules"] if isinstance(p.get("rules"), dict) else {}
+    p["rules"] = rules
+    for k in ("style_rules", "tag_allow", "tag_forbid"):
+        if not isinstance(rules.get(k), list):
+            rules[k] = []
+
+    scoring = p["scoring"] if isinstance(p.get("scoring"), dict) else {}
+    p["scoring"] = scoring
+    if not isinstance(scoring.get("facts"), list):
+        scoring["facts"] = []
+
+    # 每一段项目都补，不只是第一段
+    for pr in p["projects"]:
+        if not isinstance(pr, dict):
+            continue
+        if not isinstance(pr.get("links"), dict):
+            pr["links"] = {}
+        if not isinstance(pr.get("period"), str):
+            pr["period"] = ""
+        if not isinstance(pr.get("tech_stack"), list):
+            pr["tech_stack"] = []
+        mods = pr.get("modules") if isinstance(pr.get("modules"), list) else []
+        pr["modules"] = mods
+        for m in mods:
+            if not isinstance(m, dict):
+                continue
+            for k in ("name", "default"):
+                if not isinstance(m.get(k), str):
+                    m[k] = "" if m.get(k) is None else str(m.get(k))
+            if not isinstance(m.get("angles"), dict):
+                m["angles"] = {}
+            m["core"] = bool(m.get("core"))
 
 
 if __name__ == "__main__":

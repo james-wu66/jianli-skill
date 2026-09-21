@@ -34,6 +34,9 @@ VML_NS = "urn:schemas-microsoft-com:vml"
 WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 
+W_HYPERLINK = qn("w:hyperlink")
+R_ID = qn("r:id")
+
 
 def list_templates():
     """列出可用的模板包名。"""
@@ -214,33 +217,57 @@ def export_from_result(result, out_path, profile=None, template_dir=None):
 
     # 超链接目标同步：显示文字换了，点击跳转的 URL 也要跟着换
     #（超链接地址存在 rels 里，不改这里会出现"文字是 A 的 GitHub、点了却去 B 主页"的错配）
-    _update_hyperlinks(doc, links)
+    _update_hyperlinks(doc, links, ts, slots)
 
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     doc.save(out_path)
     return out_path
 
 
-def _update_hyperlinks(doc, links):
-    """把 docx 里的外部超链接目标按用户链接改写：
-    含 github.com 的指到用户 GitHub，其余 http 链接指到用户演示地址。
-    用户没填对应链接就保持原样。"""
-    gh = (links.get("github") or "").strip()
-    demo = (links.get("demo") or "").strip()
-    if not gh and not demo:
+def _hyperlink_rids(ts, node_idxs):
+    """从文字节点下标向上找它所在的 w:hyperlink，取那个关系 id。
+    URL 是纯文本（没被包成超链接）时返回空——此时不去猜别的链接。"""
+    rids = []
+    for i in node_idxs:
+        if not isinstance(i, int) or not (0 <= i < len(ts)):
+            continue
+        el = ts[i].getparent()
+        while el is not None:
+            if el.tag == W_HYPERLINK:
+                rid = el.get(R_ID)
+                if rid:
+                    rids.append(rid)
+                break
+            el = el.getparent()
+    return rids
+
+
+def _update_hyperlinks(doc, links, ts, slots):
+    """把 GitHub / 演示地址【所在的那个超链接】的跳转目标换成用户自己的。
+
+    按节点定位，不按 host 猜：早先的实现是遍历全部关系、凡 target 含 github.com
+    就归 GitHub、其余 http 一律归演示地址。用户模板里常有博客、作品集、二维码
+    之类不相干的超链接，那样会把它们静默改成演示地址；用户没填 GitHub 时，
+    模板原本的 GitHub 关系也会被 elif 抢走。
+    """
+    if not isinstance(links, dict):
         return
     try:
-        rels = list(doc.part.rels.values())
+        rels = doc.part.rels
     except Exception:
         return
-    for rel in rels:
-        if "hyperlink" not in getattr(rel, "reltype", ""):
+    want = []
+    for key, slot in (("github", "github_url"), ("demo", "demo_url")):
+        url = str(links.get(key) or "").strip()
+        if not url:
             continue
-        target = getattr(rel, "target_ref", "") or ""
-        if gh and "github.com" in target:
-            rel._target = gh
-        elif demo and target.startswith("http"):
-            rel._target = demo
+        nodes = (slots.get(slot) or {}).get("nodes") or []
+        want += [(rid, url) for rid in _hyperlink_rids(ts, nodes)]
+    for rid, url in want:
+        try:
+            rels[rid]._target = url
+        except Exception:
+            pass
 
 
 def _top_align_content_boxes(doc, box_cx_list):
