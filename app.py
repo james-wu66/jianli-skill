@@ -12,6 +12,7 @@
 import json
 import os
 import re
+import shutil
 import tempfile
 import threading
 import time
@@ -19,6 +20,7 @@ import uuid
 
 from flask import Flask, request, jsonify, send_file
 
+import template_export
 from generate import customize_resume
 from template_export import export_from_result
 from resume_parser import parse_resume_docx
@@ -215,30 +217,93 @@ def api_settings_save():
     return jsonify({"ok": True})
 
 
-@app.route("/api/ping", methods=["GET"])
+USER_TPL_RE = re.compile(r"^user_[0-9a-f]{8}$")   # 向导生成的专属模板包名
+
+
+def _active_template_name():
+    try:
+        return (profile_store.load_profile() or {}).get("template")
+    except Exception:
+        return None
+
+
+@app.route("/api/templates", methods=["GET"])
+def api_templates_list():
+    """列出向导为上传的简历生成的专属模板包（包内含用户简历原件，占地方也涉隐私）。"""
+    out = []
+    for name in template_export.list_templates():
+        if not USER_TPL_RE.match(name):
+            continue
+        d = os.path.join(template_export.TEMPLATES_DIR, name)
+        try:
+            with open(os.path.join(d, "template.json"), encoding="utf-8") as f:
+                cfg = json.load(f)
+        except Exception:
+            cfg = {}
+        out.append({"name": name,
+                    "display_name": cfg.get("display_name") or name,
+                    "date": time.strftime("%Y-%m-%d", time.localtime(os.path.getmtime(d)))})
+    return jsonify({"ok": True, "templates": out, "in_use": _active_template_name()})
+
+
+@app.route("/api/templates/<name>", methods=["DELETE"])
+def api_templates_delete(name):
+    """删掉一个专属模板包。正则已挡住路径穿越；当前档案在用的不允许删。"""
+    if not USER_TPL_RE.match(name):
+        return jsonify({"ok": False, "error": "只能删除向导生成的专属模板（内置模板不能删）"}), 400
+    if _active_template_name() == name:
+        return jsonify({"ok": False,
+                        "error": "这个模板正被当前档案使用，先重新解析简历换掉它再删"}), 400
+    d = os.path.join(template_export.TEMPLATES_DIR, name)
+    if not os.path.isdir(d):
+        return jsonify({"ok": False, "error": "该模板包不存在，可能已经删过了"}), 404
+    shutil.rmtree(d)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/ping", methods=["GET", "POST"])
 def api_ping():
-    """诊断端点：从服务器进程内直接调模型，排查 API 层问题。"""
-    from llm_client import _cfg3, _call_once, call_model
+    """诊断端点：从服务器进程内直接调模型，排查 API 层问题。
+
+    可带 POST body（设置页当前表单值）：这样"填完 key 先测再存"测的是
+    刚填的那个 key，而不是磁盘上还没被覆盖的旧配置。body 里留空的字段
+    回落到已保存的配置（设置页的 key 输入框本来就是"留空 = 不修改"）。
+    """
+    from llm_client import _cfg3, _call_once
+    body = request.get_json(silent=True) or {}
     t0 = time.time()
-    pk, pb, pm = _cfg3("ASSIST")
-    bk, bb, bm = _cfg3("BACKUP")
-    # 主备各试一次
-    # ⚠️ max_tokens 不能太小：主模型是推理模型，思考 token 会先把预算吃光，
-    # 给 30 会导致 content 为空被误判成"模型坏了"。实测给 400 才稳。
-    p1 = _call_once(pk, pb, pm,
-                    [{"role": "user", "content": "回复两个字：收到"}],
-                    400, temperature=0.6) if (pk and pb and pm) else ("SKIPPED", None)
-    p2 = _call_once(bk, bb, bm,
-                    [{"role": "user", "content": "回复两个字：收到"}],
-                    400, temperature=0.6) if (bk and bb and bm) else ("SKIPPED", None)
-    return jsonify({
-        "ok": True,
-        "elapsed": round(time.time() - t0, 1),
-        "primary": {"base": pb, "model": pm, "key_len": len(pk) if pk else 0,
-                    "result": p1},
-        "backup": {"base": bb, "model": bm, "key_len": len(bk) if bk else 0,
-                   "result": p2},
-    })
+
+    def probe(prefix, block_key):
+        k, b, m = _cfg3(prefix)
+        blk = body.get(block_key) or {}
+        if isinstance(blk, dict):
+            k = str(blk.get("api_key") or "").strip() or k
+            b = str(blk.get("base") or "").strip() or b
+            m = str(blk.get("model") or "").strip() or m
+        out = {"base": b or "", "model": m or "", "key_len": len(k) if k else 0,
+               "configured": bool(k and b and m), "ok": False, "status": ""}
+        if not out["configured"]:
+            out["status"] = "未配置完整（key / 地址 / 模型名都要填）"
+            return out
+        # ⚠️ max_tokens 不能太小：主模型是推理模型，思考 token 会先把预算吃光，
+        # 给 30 会导致 content 为空被误判成"模型坏了"。实测给 400 才稳。
+        content, usage = _call_once(k, b, m,
+                                    [{"role": "user", "content": "回复两个字：收到"}],
+                                    400, temperature=0.6)
+        if content:
+            out["ok"] = True
+            out["status"] = "连通正常"
+        elif isinstance(usage, dict) and usage.get("_rl"):
+            out["status"] = "被限流（429），等一两分钟再试"
+        else:
+            out["status"] = "调不通：检查 key、地址、模型名是否正确"
+        return out
+
+    prim = probe("ASSIST", "primary")
+    back = probe("BACKUP", "backup")
+    return jsonify({"ok": True,
+                    "elapsed": round(time.time() - t0, 1),
+                    "primary": prim, "backup": back})
 
 
 def _read_text_any_codec(path):

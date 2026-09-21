@@ -360,6 +360,11 @@ button {
       <button class="btn-ghost" onclick="testSettings()">测试连通</button>
       <button class="btn-ghost" onclick="closeSettings()">关闭</button>
     </div>
+    <div style="font-weight:bold;color:#5a9be0;margin:18px 0 2px">我的专属模板</div>
+    <div style="font-size:12px;color:#9db0c6;line-height:1.7;margin-bottom:8px">
+      走向导上传简历时，会按你那份简历的版式生成一个模板包（里面存着简历原件）。不用的删掉即可。
+    </div>
+    <div id="stTplList" style="font-size:12.5px"></div>
   </div>
 </div>
 
@@ -621,10 +626,9 @@ function wzShowForm(draft, template) {
   rows.push('<div style="font-weight:bold;color:#5a9be0;margin:14px 0 2px">⑥ 证书 / 获奖（一行一条，可留空）</div>');
   inp('wz_certs', '证书', (draft.certificates || []).join('\n'), '', true);
   rows.push('<div style="font-weight:bold;color:#5a9be0;margin:14px 0 2px">⑦ 真实情况（用于诚实打分，不会被写进简历）</div>');
-  var sc = draft.scoring || {};
-  var scFacts = sc.facts || [];
-  inp('wz_score_edu', '学历情况', scFacts[0] || '', '例：民办本科在读（2027 毕业）');
-  inp('wz_score_intern', '实习情况', scFacts[1] || '', '例：无正式实习经历');
+  var scFacts = (draft.scoring || {}).facts || [];
+  inp('wz_score_facts', '真实短板（一行一条，一条都别删——少一条就会少扣一次分）',
+      scFacts.join('\n'), '例：民办本科在读（2027 毕业）', true);
   rows.push('<div class="btn-row"><button class="btn-primary" onclick="wzSave()">保存并开始使用</button></div>');
   f.innerHTML = rows.join('');
   (draft.projects && draft.projects.length ? draft.projects : [{}])
@@ -654,16 +658,31 @@ function wzProjCard(i, p) {
     fin('tech', '技术栈（逗号分隔）', (p.tech_stack || []).join('、'), '例：Python Flask, MySQL') +
     fin('intro', '项目概述（一句话）', p.intro, '', true) +
     fin('mods', '项目要点（一行一条，格式「模块名：做了什么」）',
-        (p.modules || []).map(function (m) { return m.name + '：' + m.default; }).join('\n'),
+        (p.modules || []).map(function (m) { return m.name + '：' + (m.default || ''); }).join('\n'),
         'AI 自主学习系统：把每局对局数据分桶记录，做数据驱动的策略修正', true) +
+    modCarryHint(p) +
     '</div>';
+}
+
+/* angles（按岗位方向准备的表述）与 core（核心标记）表单里不收，
+   但引擎靠它们决定"投前端用前端那条说法"，只能原样带回到保存那一步。 */
+function modCarryHint(p) {
+  var kept = 0;
+  (p.modules || []).forEach(function (m) {
+    if (m && (m.core || Object.keys(m.angles || {}).length)) kept++;
+  });
+  if (!kept) return '';
+  return '<div style="font-size:11.5px;color:#9db0c6;margin:-4px 0 8px">' +
+         '已带上 ' + kept + ' 条要点的方向角度 / 核心标记（本页不编辑它们，保存会原样保留）</div>';
 }
 
 function wzAddProject(p) {
   var box = document.getElementById('wzProjects');
   var div = document.createElement('div');
   div.innerHTML = wzProjCard(box.querySelectorAll('.wz-proj').length, p);
-  box.appendChild(div.firstChild);
+  var card = div.firstChild;
+  card.wzModules = (p && p.modules) || [];
+  box.appendChild(card);
   wzRenumber();
 }
 
@@ -684,6 +703,7 @@ function wzVal(id) {
 function openSettings() {
   document.getElementById('settingsModal').style.display = 'flex';
   document.getElementById('stStatus').textContent = '';
+  loadTemplates();
   fetch('/api/settings/llm').then(function (r) { return r.json(); }).then(function (d) {
     if (!d || !d.ok) return;
     var p = d.primary || {}, b = d.backup || {};
@@ -704,11 +724,61 @@ function closeSettings() {
   document.getElementById('settingsModal').style.display = 'none';
 }
 
-function saveSettings() {
-  var body = {
+/* ---------- 专属模板包管理（向导生成的包里有用户简历原件）---------- */
+var stTplData = [];
+
+function loadTemplates() {
+  var box = document.getElementById('stTplList');
+  fetch('/api/templates', { cache: 'no-store' }).then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d || !d.ok) { box.textContent = '模板列表读取失败'; return; }
+      stTplData = d.templates || [];
+      if (!stTplData.length) {
+        box.innerHTML = '<span style="color:#6d8299">还没有专属模板包</span>';
+        return;
+      }
+      box.innerHTML = stTplData.map(function (t, i) {
+        var inUse = t.name === d.in_use;
+        return '<div style="display:flex;justify-content:space-between;align-items:center;'
+             + 'gap:10px;border:1px solid #2d4768;border-radius:8px;padding:7px 10px;margin-bottom:6px">'
+             + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+             + esc(t.display_name) + ' <span style="color:#6d8299">' + esc(t.date) + '</span>'
+             + (inUse ? ' <span style="color:#3fb96e">使用中</span>' : '') + '</span>'
+             + (inUse ? '' : '<button class="btn-ghost" style="padding:3px 12px;font-size:11px;'
+                           + 'flex:none" onclick="delTemplate(' + i + ')">删除</button>')
+             + '</div>';
+      }).join('');
+    })
+    .catch(function (e) { box.textContent = '模板列表读取失败：' + e.message; });
+}
+
+function delTemplate(i) {
+  var t = stTplData[i];
+  if (!t) return;
+  if (!confirm('删除模板包「' + t.display_name + '」？\n\n里面存着你当时上传的简历原件，删除后不可恢复。')) return;
+  fetch('/api/templates/' + encodeURIComponent(t.name), { method: 'DELETE' })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      setStStatus(d.ok ? '✅ 已删除模板包' : '删除失败：' + (d.error || ''));
+      loadTemplates();
+    })
+    .catch(function (e) { setStStatus('删除失败：' + e.message); });
+}
+
+function setStStatus(text) {
+  document.getElementById('stStatus').textContent = text;
+}
+
+/* 设置页当前的表单值。key 留空由服务端回落到已保存的配置（"留空 = 不修改"）。 */
+function settingsBody() {
+  return {
     primary: { api_key: wzVal('st_primary_key'), base: wzVal('st_primary_base'), model: wzVal('st_primary_model') },
     backup:  { api_key: wzVal('st_backup_key'),  base: wzVal('st_backup_base'),  model: wzVal('st_backup_model') }
   };
+}
+
+function saveSettings() {
+  var body = settingsBody();
   var st = document.getElementById('stStatus');
   st.textContent = '保存中…';
   fetch('/api/settings/llm', {
@@ -720,16 +790,34 @@ function saveSettings() {
   }).catch(function (e) { st.textContent = '保存失败：' + e.message; });
 }
 
+function pingLabel(p) {
+  p = p || {};
+  if (!p.configured) return '⚠ ' + (p.status || '未配置');
+  return (p.ok ? '✅ ' : '❌ ') + (p.status || (p.ok ? '连通正常' : '不通'));
+}
+
 function testSettings() {
   var st = document.getElementById('stStatus');
-  st.textContent = '测试中…（调一次模型，约 10~30 秒）';
-  fetch('/api/ping').then(function (r) { return r.json(); }).then(function (d) {
-    var p = d.primary || {}, b = d.backup || {};
-    var msg = [];
-    msg.push('主模型：' + (p.result && p.result[0] ? '✅ 连通正常' : '❌ 不通'));
-    msg.push('备用：' + (b.result && b.result[0] ? '✅ 连通正常' : '❌ 不通/未配'));
-    st.textContent = msg.join('　｜　') + '（耗时 ' + d.elapsed + ' 秒）';
+  st.textContent = '测试中…（真的调一次模型，约 10~30 秒）';
+  fetch('/api/ping', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settingsBody())
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (!d || !d.ok) { st.textContent = '测试失败：' + ((d && d.error) || '服务异常'); return; }
+    st.textContent = '主模型 ' + pingLabel(d.primary) + '　｜　备用 ' + pingLabel(d.backup)
+                   + '（耗时 ' + d.elapsed + ' 秒）';
   }).catch(function (e) { st.textContent = '测试失败：' + e.message; });
+}
+
+/* 带 angles 或 core 的要点条数——用来判断这次保存会不会丢东西 */
+function modCarryCount(projects) {
+  var n = 0;
+  (projects || []).forEach(function (pr) {
+    ((pr && pr.modules) || []).forEach(function (m) {
+      if (m && (m.core || Object.keys(m.angles || {}).length)) n++;
+    });
+  });
+  return n;
 }
 
 function wzSave() {
@@ -742,12 +830,23 @@ function wzSave() {
       var el = card.querySelector('[data-f="' + f + '"]');
       return el ? el.value.trim() : '';
     }
+    // 表单只收「模块名：表述」，angles/core 按模块名从原档案取回来；
+    // 改了模块名就等于换了要点，角度挂不上去，下面会按数量差提示出来。
+    var prev = card.wzModules || [];
+    function findPrev(nm) {
+      for (var j = 0; j < prev.length; j++) {
+        if (prev[j] && prev[j].name === nm) return prev[j];
+      }
+      return null;
+    }
     var mods = v('mods').split('\n').map(function (ln) {
       ln = ln.trim(); if (!ln) return null;
       var i = ln.indexOf('：'); if (i < 0) i = ln.indexOf(':');
-      if (i < 0) return { name: ln, core: false, default: '', angles: {} };
-      return { name: ln.slice(0, i).replace(/^●\s*/, '').trim(), core: false,
-               default: ln.slice(i + 1).trim(), angles: {} };
+      var nm, txt;
+      if (i < 0) { nm = ln.replace(/^●\s*/, '').trim(); txt = ''; }
+      else { nm = ln.slice(0, i).replace(/^●\s*/, '').trim(); txt = ln.slice(i + 1).trim(); }
+      var old = findPrev(nm) || {};
+      return { name: nm, core: !!old.core, default: txt, angles: old.angles || {} };
     }).filter(Boolean);
     projects.push({
       title: v('title'), role: v('role'), period: v('period'),
@@ -762,6 +861,17 @@ function wzSave() {
     return;
   }
 
+  var hadCarry = modCarryCount(MYFULL && MYFULL.projects);
+  var willCarry = modCarryCount(projects);
+  if (willCarry < hadCarry && !confirm(
+      '这次保存会丢掉 ' + (hadCarry - willCarry) + ' 条要点的「方向角度 / 核心标记」'
+      + '（原档案有 ' + hadCarry + ' 条，保存后只剩 ' + willCarry + ' 条）。\n\n'
+      + '这些是引擎按岗位方向挑选表述的原料，丢了之后投任何岗位都会输出同一套说法。\n'
+      + '通常是改了要点名字、或删掉了整段项目造成的。\n\n'
+      + '确定要这样保存吗？（取消 = 回去把要点名字改回原样）')) {
+    return;
+  }
+
   var skills = {};
   wzVal('wz_skills').split('\n').forEach(function (ln) {
     ln = ln.trim(); if (!ln) return;
@@ -771,9 +881,11 @@ function wzSave() {
       ln.slice(i + 1).split(/[；;]/).map(function (s) { return s.trim(); }).filter(Boolean);
   });
   var certs = wzVal('wz_certs').split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
-  var facts = [wzVal('wz_score_edu'), wzVal('wz_score_intern')].filter(Boolean);
+  var facts = wzVal('wz_score_facts').split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
 
-  var profile = {
+  /* 以磁盘上的原档案为底再覆盖本表单负责的字段：
+     手写的 _说明、以后新增的任何键，都不会因为走一次「我的资料」保存而消失。 */
+  var profile = Object.assign({}, MYFULL || {}, {
     basic: { name: name, ethnic: wzVal('wz_ethnic'), phone: wzVal('wz_phone'),
              email: wzVal('wz_email'), birth: wzVal('wz_birth'), hukou: wzVal('wz_hukou'),
              degree: wzVal('wz_degree'), github: wzVal('wz_github'), demo: wzVal('wz_demo') },
@@ -785,9 +897,9 @@ function wzSave() {
     skills: skills,
     certificates: certs,
     rules: (MYFULL && MYFULL.rules) || { style_rules: [], tag_allow: [], tag_forbid: [] },
-    scoring: { facts: facts },
+    scoring: Object.assign({}, (MYFULL && MYFULL.scoring) || {}, { facts: facts }),
     template: wzTplName || (MYFULL && MYFULL.template) || 'classic_blue'
-  };
+  });
 
   wzStatus('保存中…');
   fetch('/api/wizard/save', {
@@ -809,6 +921,17 @@ function esc(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/* 模型输出的每条要点/技能是一整串「●【核心】模块名：内容」，Word 里也按原样写。
+   这里拆开只为了预览好排版；冒号可能出现在内容里，所以只按第一个拆。 */
+function splitPoint(line) {
+  var s = String(line || '').trim();
+  var core = /【核心】/.test(s);
+  s = s.replace(/^[●·•]\s*/, '').replace(/【核心】\s*/, '').trim();
+  var i = s.indexOf('：'); if (i < 0) i = s.indexOf(':');
+  if (i < 0) return { name: '', text: s, core: core };
+  return { name: s.slice(0, i).trim(), text: s.slice(i + 1).trim(), core: core };
 }
 
 function scoreColor(score) {
@@ -956,6 +1079,10 @@ function renderError(msg) {
 
 function renderResult(data, meta) {
   var r = data.result;
+  /* 预览要还原的是 Word 里的内容：项目时间/演示链接取自档案，
+     和 template_export 用的是同一处来源，避免预览和 Word 各说一套。 */
+  var mproj = ((MYFULL && MYFULL.projects) || [])[0] || {};
+  var mlinks = mproj.links || {};
   var m = r.match || {};
   var score = (m.score === null || m.score === undefined || m.score === '') ? null : Number(m.score);
   var col = scoreColor(score);
@@ -1015,8 +1142,7 @@ function renderResult(data, meta) {
   html += '<div class="pv-contact">' +
           '<div>' + contact.join('　｜　') + '</div>' +
           (mb.github ? '<div>GitHub：' + esc(mb.github) + '</div>' : '') +
-          (r.project_links && r.project_links.demo
-            ? '<div>演示：' + esc(r.project_links.demo) + '</div>' : '') +
+          (mlinks.demo ? '<div>演示：' + esc(mlinks.demo) + '</div>' : '') +
           '</div>';
 
   html += '<div class="pv-sec">基本信息</div>';
@@ -1038,32 +1164,27 @@ function renderResult(data, meta) {
 
   html += '<div class="pv-sec">项目经历</div>';
   html += '<div class="pv-item"><span class="pname">' + esc(r.project_title || '') +
-          '</span>　｜　' + esc(r.project_role || '') + '　｜　' + esc(r.project_period || '') + '</div>';
-  if (r.project_intro) html += '<div class="pv-tech">' + esc(r.project_intro) + '</div>';
-  if (r.modules && r.modules.length) {
-    for (var k = 0; k < r.modules.length; k++) {
-      html += '<div class="pv-item"><span class="pv-bullet">●</span>' +
-              '<span class="pname">' + esc(r.modules[k].name || '') + '：</span>' +
-              esc(r.modules[k].text || '') + '</div>';
-    }
+          '</span>　｜　' + esc(r.project_role || '') +
+          (mproj.period ? '　｜　' + esc(mproj.period) : '') + '</div>';
+  var pts = r.project_points || [];
+  for (var k = 0; k < pts.length; k++) {
+    var pp = splitPoint(pts[k]);
+    html += '<div class="pv-item"><span class="pv-bullet">●</span>' +
+            (pp.core ? '<span style="color:#e0a93f">【核心】</span>' : '') +
+            (pp.name ? '<span class="pname">' + esc(pp.name) + '：</span>' : '') +
+            esc(pp.text) + '</div>';
   }
   if (r.tech_stack && r.tech_stack.length) {
     html += '<div class="pv-tech">技术栈：' + esc(r.tech_stack.join('、')) + '</div>';
   }
 
   html += '<div class="pv-sec">专业技能</div>';
-  if (r.skill_groups && r.skill_groups.length) {
-    for (var s = 0; s < r.skill_groups.length; s++) {
-      var g = r.skill_groups[s];
-      if (!g.items || !g.items.length) continue;
-      html += '<div class="pv-item"><span class="pv-bullet">●</span>' +
-              '<span class="pname">' + esc(g.group || '') + '：</span>' +
-              esc(g.items.join('；')) + '</div>';
-    }
-  } else if (r.skill_lines && r.skill_lines.length) {
-    for (var s2 = 0; s2 < r.skill_lines.length; s2++) {
-      html += '<div class="pv-item">' + esc(r.skill_lines[s2]) + '</div>';
-    }
+  var slines = r.skill_lines || [];
+  for (var s = 0; s < slines.length; s++) {
+    var sg = splitPoint(slines[s]);
+    html += '<div class="pv-item"><span class="pv-bullet">●</span>' +
+            (sg.name ? '<span class="pname">' + esc(sg.name) + '：</span>' : '') +
+            esc(sg.text) + '</div>';
   }
   if (MY.certificates && MY.certificates.length) {
     html += '<div class="pv-item"><span class="pv-bullet">●</span>' +
