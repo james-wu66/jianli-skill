@@ -318,7 +318,8 @@ button {
       <div class="t2">同一份项目，按岗位换角度重写</div>
     </div>
   </div>
-  <div class="status">模型：<b id="modelLabel">检测中…</b>
+  <div class="status">当前档案：<b id="profileLabel">未建立</b>
+    <span style="margin-left:12px">模型：<b id="modelLabel">检测中…</b></span>
     <button class="btn-ghost" id="settingsBtn" style="margin-left:10px;padding:5px 12px;font-size:12px"
             onclick="openSettings()">设置</button>
     <button class="btn-ghost" id="profileBtn" style="display:none;margin-left:6px;padding:5px 12px;font-size:12px"
@@ -504,6 +505,11 @@ var MYFULL = null;          // 完整档案（编辑回填用）
 var wzTplName = null;       // 向导解析出的专属模板目录名
 var wzPickedFile = null;
 
+function setProfileLabel(text) {
+  var el = document.getElementById('profileLabel');
+  if (el) el.textContent = text;
+}
+
 function routeByProfile() {
   return fetch('/api/profile').then(function (r) { return r.json(); }).then(function (d) {
     if (d && d.ok && d.exists) {
@@ -511,11 +517,16 @@ function routeByProfile() {
       MY = { basic: MYFULL.basic || {}, education: MYFULL.education || {},
              certificates: MYFULL.certificates || [] };
       document.getElementById('profileBtn').style.display = '';
+      var fname = MYFULL._file || '';
+      setProfileLabel((MYFULL.basic || {}).name || fname.replace(/\.json$/, '') || '未命名');
       return 'main';
     }
+    if (d && !d.ok && d.error) { setProfileLabel('档案读不了'); }
+    else { setProfileLabel('还没建立'); }
     showWizard(null);
     return 'wizard';
   }).catch(function () {
+    setProfileLabel('读不到');
     document.getElementById('profileBtn').style.display = '';
     return 'main';
   });

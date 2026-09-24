@@ -18,6 +18,9 @@ _APP_DIR = os.path.dirname(os.path.abspath(__file__))
 PROFILES_DIR = os.path.join(_APP_DIR, "profiles")
 ACTIVE_FILE = os.path.join(PROFILES_DIR, "active.txt")
 
+# 示例档案（给别人照抄结构用的假人），永远不算"当前用户的档案"
+EXAMPLE_PREFIX = "示例"
+
 
 def list_profiles():
     """全部档案文件名（不含 active.txt）。"""
@@ -26,8 +29,14 @@ def list_profiles():
     return sorted(f for f in os.listdir(PROFILES_DIR) if f.endswith(".json"))
 
 
+def real_profiles(names=None):
+    """排除示例档案后的真实用户档案名列表。"""
+    names = names if names is not None else list_profiles()
+    return [n for n in names if not n.startswith(EXAMPLE_PREFIX)]
+
+
 def active_name():
-    """当前激活的档案文件名。"""
+    """当前激活的档案文件名；没建档时返回 None（不是示例档案）。"""
     names = list_profiles()
     if not names:
         return None
@@ -38,7 +47,12 @@ def active_name():
             return name
     except OSError:
         pass
-    return names[0]
+    # 没有 active.txt（新电脑上的常态）：只有存在非示例档案时才自动选一个。
+    # 早先这里是"取目录里第一个"，而新仓库 profiles/ 里唯一的就是示例-张三.json，
+    # 于是新用户会被判定成"已建档"，第一屏直接拿张三的假资料当他本人，
+    # 向导再也不弹——README 里"首次使用会自动进入向导"那条也就是假的。
+    real = real_profiles(names)
+    return real[0] if real else None
 
 
 def set_active(name):
