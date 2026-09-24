@@ -98,9 +98,9 @@ N=这一行是 Word 自动项目符号列表的条目（文本里看不到符号
    "objective": {{"nodes": [[a, b], ...]}},
    "proj_title": {{"nodes": [...]}},
    "proj_period": {{"nodes": [...]}},
-   "modules": {{"nodes": [[...], [...]], "count": 每套节点数}},
+   "modules": {{"nodes": [该区域全部下标，扁平列表]}},
    "tech": {{"nodes": [...], "prefix": "技术栈："}},
-   "skills": {{"nodes": [[...], [...]], "count": 每套节点数}},
+   "skills": {{"nodes": [该区域全部下标，扁平列表]}},
    "github_url": {{"nodes": [...], "label_nodes": [...]}},
    "demo_url": {{"nodes": [...], "label_nodes": [...]}}
  }},
@@ -115,11 +115,13 @@ N=这一行是 Word 自动项目符号列表的条目（文本里看不到符号
 2. objective=求职意向；proj_title=项目标题行（项目名｜角色｜）；proj_period=项目时间；
    modules=项目要点（每条要点一个节点）；tech=技术栈行；skills=专业技能条目（每条一个节点）；
    github_url/demo_url=项目链接的 URL 节点；cert_text=证书行。
-3. 很多 WPS 模板简历的每个内容存了两份、文字几乎相同（一份在形状里、一份在绘图里，
-   对应结构标记 V 和 D）。发现成对重复的内容，两套下标都要列（如 objective 写成
-   [[52,53],[54,55]]）；只出现一次的内容就列一套。
-   尽量让两套的条数一致；确实对不齐时不必放弃整块——引擎会按较少的那套处理，
-   多出来的那几条保持原稿不动。
+3. 同一处内容常常存了两份（一份在 VML 形状里、一份在绘图里，对应结构标记 V 和 D）。
+   处理方式分两种：
+   - objective：要按"同一句话的两个副本"分组给出，如 [[52,53],[54,55]]；
+   - modules / skills：**直接把这个区域涉及的全部下标列成一个扁平列表就行**，
+     比如 [59,60,61,62,63,64,80,81,82,83,84,85]。分组由引擎按下标所在容器自动完成，
+     你【不要】自己按"每条一套"或"每份一套"去嵌套——那种分法引擎会判为映射不可信。
+     单值区域（proj_title/proj_period/tech/github_url/demo_url）同样给扁平列表。
 4. 宁缺勿错：拿不准的节点宁可不映射（省略），引擎会保留原样；
    严禁把同一个下标列进两个不同区域。
 5. 细节判定：
@@ -182,7 +184,7 @@ def build_user_template(docx_path, original_name=""):
     from docx import Document
     doc = Document(docx_path)
     ts = list(doc.element.body.iter(qn("w:t")))
-    dump = _dump_nodes(ts)
+    dump, containers = _dump_nodes(ts)
     if not dump.strip():
         return {"status": "fallback", "name": template_export.DEFAULT_TEMPLATE,
                 "message": "文档里没有文字，无法当模板"}
@@ -200,7 +202,7 @@ def build_user_template(docx_path, original_name=""):
         return {"status": "fallback", "name": template_export.DEFAULT_TEMPLATE,
                 "message": "模板结构分析失败，使用内置模板"}
 
-    cfg, warnings, usable = _validate_mapping(mapping, len(ts))
+    cfg, warnings, usable = _validate_mapping(mapping, len(ts), containers)
     if not usable:
         msg = "；".join(warnings[-2:]) or "映射不可用"
         return {"status": "fallback", "name": template_export.DEFAULT_TEMPLATE,
@@ -319,17 +321,22 @@ A_EXT = "{%s}ext" % template_export.A_NS
 
 
 def _dump_nodes(ts, max_len=80):
-    """给模型看的节点清单：下标 | 结构线索 | 文字。
+    """生成给模型看的节点清单，并返回每个节点所在容器的标记表。
 
-    结构线索是必需的——早先判据写成"条目通常以 ● 开头"，可简历里分点符号
-    五花八门（· / • / - / 或者用 Word 自动编号，文本里根本没有符号），
-    这种简历模型就认不出哪几行是项目要点，整块不敢映射。
-    所以这里把"这一行在哪个容器里、是不是 Word 自动编号列表项"标出来，
-    让模型按结构和语义判断，不靠符号猜。
-      D  在绘图形状(wps)里   V  在VML形状里   B  两者都有的重复副本之外
-      N  该段带 Word 自动项目符号(w:numPr)
+    清单每行「下标 | 结构 | 文字」，结构标记：
+      D 在 Word 绘图形状里   V 在 VML 形状里   P 普通段落
+      N 该段带 Word 自动项目符号（文本里没有符号，但它是一条列表项）
+
+    两件事都必需：
+    1) 早先判据写成"条目通常以 ● 开头"，可分点符号五花八门
+       （· / • / - / 自动编号），这类简历的"项目要点/专业技能"整块认不出来。
+       给结构线索，模型才能按语义和层级判断。
+    2) containers 表让【引擎自己】按容器分套。同一份内容在 V 和 D 里各存一份，
+       这个事实让模型去理解并不稳定（实测把"每条要点"当成"一套"，
+       10 套 x 2 条会把同一句话写进 20 个位置、盖掉简历其他区域）。
     """
     lines = []
+    containers = {}
     for i, t in enumerate(ts):
         txt = (t.text or "").strip()
         if not txt:
@@ -339,23 +346,37 @@ def _dump_nodes(ts, max_len=80):
         el = t.getparent()
         seen_shape = False
         while el is not None:
-            tag = el.tag
             if not seen_shape:
-                if tag == WPS_WSP_TAG:
+                if el.tag == WPS_WSP_TAG:
                     flags.append("D")
                     seen_shape = True
-                elif tag == VML_SHAPE_TAG:
+                elif el.tag == VML_SHAPE_TAG:
                     flags.append("V")
                     seen_shape = True
-            if tag == qn("w:p") and el.find(".//" + qn("w:numPr")) is not None:
+            if el.tag == qn("w:p") and el.find(".//" + qn("w:numPr")) is not None:
                 numpr = True
             el = el.getparent()
         if numpr:
             flags.append("N")
+        containers[i] = ("D" if "D" in flags else "V" if "V" in flags else "P")
         if len(txt) > max_len:
             txt = txt[:max_len] + "…"
         lines.append("%d|%s|%s" % (i, "".join(flags) or "P", txt))
-    return "\n".join(lines)
+    return "\n".join(lines), containers
+
+
+# 同一区域的下标按容器分套的顺序：绘图一份、形状一份、普通段落一份
+CONTAINER_ORDER = ("D", "V", "P")
+
+
+def _group_by_container(flat, containers):
+    """把一个区域的所有下标按容器分成若干套（保持文档顺序，丢掉空组）。"""
+    groups = []
+    for tag in CONTAINER_ORDER:
+        g = [i for i in flat if containers.get(i, "P") == tag]
+        if g:
+            groups.append(g)
+    return groups
 
 
 def _content_box_cx(ts, cfg):
@@ -380,7 +401,7 @@ def _content_box_cx(ts, cfg):
     return sorted(cxs)
 
 
-def _validate_mapping(mapping, n_nodes):
+def _validate_mapping(mapping, n_nodes, containers=None):
     warnings = []
     clean = {"slots": {}, "fields": {}, "edu_line": None}
 
@@ -502,16 +523,26 @@ def _validate_mapping(mapping, n_nodes):
                 continue
             entry["nodes"] = groups
         else:
-            sets = [scrub(x, f"slots.{k}.nodes") for x in _as_sets(nodes)]
+            if containers:
+                # 模型只负责"哪些下标属于这个区域"，分成几套由引擎按容器定。
+                # 让模型自己理解"同一份内容在形状/绘图里各存一份"并不稳定：
+                # 实测它会把"每条要点"当成"一套"，10 套 x 2 条会把同一句话
+                # 写进 20 个位置、盖掉简历其他区域——改错比不改更糟。
+                flat = []
+                for i in _flatten(nodes):
+                    if ok_idx(i) and i not in flat:
+                        flat.append(i)
+                raw_sets = _group_by_container(flat, containers)
+            else:
+                raw_sets = _as_sets(nodes)
+            sets = [scrub(x, f"slots.{k}.nodes") for x in raw_sets]
             sets = [s for s in sets if s]
             if not sets:
                 warnings.append(f"slots.{k} 下标无效，已忽略")
                 continue
-            if len(sets) > 2:
-                # "套"只有两种来源：形状里一份(V) + 绘图里一份(D)。出现 3 套以上，
-                # 说明模型把"每条要点算一套"理解错了（实测会把 10 个不相干节点
-                # 列成 10 套）。这种映射不能要：引擎会往那 10 个位置写同样的内容，
-                # 把简历其他区域盖掉——改错比不改更糟，所以整块丢弃。
+            if not containers and len(sets) > 2:
+                # 没有容器信息可依据时（人工编辑的模板包），只能沿用"最多两套"
+                # 这个形状约束来挡结构错乱的映射。
                 warnings.append("slots.%s 被列成 %d 套（应为 1~2 套），判为映射不可信，已忽略"
                                 % (k, len(sets)))
                 continue
