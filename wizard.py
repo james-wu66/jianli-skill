@@ -18,6 +18,8 @@ import re
 import shutil
 import uuid
 
+from docx.oxml.ns import qn
+
 from llm_client import call_model
 from resume_parser import _extract_lines
 import template_export
@@ -79,7 +81,10 @@ _EXTRACT_SYSTEM = """你负责把用户的简历原文整理成结构化档案�
 _MAP_SYSTEM = """你在为「简历模板替换引擎」分析一份 docx 简历的内部文字节点。
 引擎原理：生成新简历时，把这些节点的文字【原地替换】成新内容，版式、形状、图片完全不动。
 你的任务：判断每个区域对应哪些节点下标，输出 JSON 映射，供引擎自动替换。
-我会在下一条消息里给你文档按顺序编号的全部文字节点（编号=节点下标，格式「下标|文字」）。
+我会在下一条消息里给你文档按顺序编号的全部文字节点，每行格式「下标 | 结构 | 文字」。
+结构标记：D=这一行在 Word 绘图形状里，V=在 VML 形状里，P=普通段落，
+N=这一行是 Word 自动项目符号列表的条目（文本里看不到符号，但它确实是一条列表项）。
+同一处内容常常在 D 和 V 里各存一份（两份文字几乎一模一样）。
 
 输出 JSON 结构（字段严格一致；简历里没有的区域直接省略整个键）：
 {{
@@ -110,14 +115,21 @@ _MAP_SYSTEM = """你在为「简历模板替换引擎」分析一份 docx 简历
 2. objective=求职意向；proj_title=项目标题行（项目名｜角色｜）；proj_period=项目时间；
    modules=项目要点（每条要点一个节点）；tech=技术栈行；skills=专业技能条目（每条一个节点）；
    github_url/demo_url=项目链接的 URL 节点；cert_text=证书行。
-3. 很多 WPS 模板简历的每个内容存了两份、文字几乎相同（一份在形状里、一份在绘图里）。
-   发现成对重复的内容，两套下标都要列（如 objective 写成 [[52,53],[54,55]]）；
-   只出现一次的内容就列一套。modules/skills 的多套节点数量必须一致。
+3. 很多 WPS 模板简历的每个内容存了两份、文字几乎相同（一份在形状里、一份在绘图里，
+   对应结构标记 V 和 D）。发现成对重复的内容，两套下标都要列（如 objective 写成
+   [[52,53],[54,55]]）；只出现一次的内容就列一套。
+   尽量让两套的条数一致；确实对不齐时不必放弃整块——引擎会按较少的那套处理，
+   多出来的那几条保持原稿不动。
 4. 宁缺勿错：拿不准的节点宁可不映射（省略），引擎会保留原样；
    严禁把同一个下标列进两个不同区域。
 5. 细节判定：
-   - modules/skills 只列【整句条目】的节点（通常以 ● 开头）；孤立的「●」符号节点、
-     空节点、纯分隔符（如「/」）都不算条目，不要列进去。
+   - modules（项目要点）和 skills（技能条目）就是这两块里"一条一句"的整句条目节点，
+     【不要靠开头有没有 ● 来认】。分点符号可能是 ● / · / • / - / ►，也可能什么都没有
+     （结构标记带 N 的就是 Word 自动项目符号，符号不在文字里）。
+     正确判据是：同属一个区域、句式长度相近、连续排列的若干完整句子。
+     区域靠上下文中「项目经历」「专业技能」这类小标题，以及它们所在同一个形状/同一容器
+     来确定。孤立的符号节点、空节点、纯分隔符（如「/」）不算条目，不要列进去。
+   - 同一个项目里"●技术栈：…"这种汇总行属于 tech，不要算进 modules。
    - cert_text 只列【证书正文】所在的节点（每套一个）；同一行里拆出来的
      其他碎片节点（如「证书：」标签、「/」分隔符、另一段正文）列入 clear_nodes。
 6. 只输出 JSON，不要 markdown 包裹，不要任何解释。
@@ -168,11 +180,9 @@ def build_user_template(docx_path, original_name=""):
     返回 {"status": "ok"|"fallback", "name": 目录名, "message": ...}
     """
     from docx import Document
-    from docx.oxml.ns import qn
     doc = Document(docx_path)
     ts = list(doc.element.body.iter(qn("w:t")))
-    dump = "\n".join(f"{i}|{(t.text or '').strip()}"
-                     for i, t in enumerate(ts) if (t.text or "").strip())
+    dump = _dump_nodes(ts)
     if not dump.strip():
         return {"status": "fallback", "name": template_export.DEFAULT_TEMPLATE,
                 "message": "文档里没有文字，无法当模板"}
@@ -181,7 +191,8 @@ def build_user_template(docx_path, original_name=""):
         messages=[
             {"role": "system", "content": _MAP_SYSTEM},
             {"role": "user",
-             "content": "文字节点清单：\n" + dump[:9000] + "\n\n请输出映射 JSON。"},
+             "content": "文字节点清单（格式「下标|结构|文字」）：\n"
+                        + dump[:16000] + "\n\n请输出映射 JSON。"},
         ],
         max_tokens=_MAP_MAX_TOKENS, temperature=0.2, no_think=True)
     mapping = _parse_json(content)
@@ -288,8 +299,63 @@ def _content_node_idxs(cfg, n_nodes):
     return out
 
 
-WPS_WSP = "{%s}wsp" % template_export.WPS_NS
+def _as_sets(nodes):
+    """把 nodes 统一成"若干套"的形态 [[..], [..]]。
+    模型只给一套扁平列表时也当单套处理——以前这种会走到扁平分支，
+    产出 entry["nodes"] 是整数列表，而 template_export 按"套"消费
+    （idx_list[k]），整数下标会 TypeError。"""
+    if nodes and all(isinstance(x, list) for x in nodes):
+        return nodes
+    return [nodes]
+
+
+# 只认这套下标结构以外的区域，nodes 必须压平成整数列表
+NESTED_SLOTS = ("modules", "skills", "objective")
+
+WPS_WSP_TAG = "{%s}wsp" % template_export.WPS_NS
+VML_SHAPE_TAG = "{%s}shape" % template_export.VML_NS
+WPS_WSP = WPS_WSP_TAG
 A_EXT = "{%s}ext" % template_export.A_NS
+
+
+def _dump_nodes(ts, max_len=80):
+    """给模型看的节点清单：下标 | 结构线索 | 文字。
+
+    结构线索是必需的——早先判据写成"条目通常以 ● 开头"，可简历里分点符号
+    五花八门（· / • / - / 或者用 Word 自动编号，文本里根本没有符号），
+    这种简历模型就认不出哪几行是项目要点，整块不敢映射。
+    所以这里把"这一行在哪个容器里、是不是 Word 自动编号列表项"标出来，
+    让模型按结构和语义判断，不靠符号猜。
+      D  在绘图形状(wps)里   V  在VML形状里   B  两者都有的重复副本之外
+      N  该段带 Word 自动项目符号(w:numPr)
+    """
+    lines = []
+    for i, t in enumerate(ts):
+        txt = (t.text or "").strip()
+        if not txt:
+            continue
+        flags = []
+        numpr = False
+        el = t.getparent()
+        seen_shape = False
+        while el is not None:
+            tag = el.tag
+            if not seen_shape:
+                if tag == WPS_WSP_TAG:
+                    flags.append("D")
+                    seen_shape = True
+                elif tag == VML_SHAPE_TAG:
+                    flags.append("V")
+                    seen_shape = True
+            if tag == qn("w:p") and el.find(".//" + qn("w:numPr")) is not None:
+                numpr = True
+            el = el.getparent()
+        if numpr:
+            flags.append("N")
+        if len(txt) > max_len:
+            txt = txt[:max_len] + "…"
+        lines.append("%d|%s|%s" % (i, "".join(flags) or "P", txt))
+    return "\n".join(lines)
 
 
 def _content_box_cx(ts, cfg):
@@ -406,41 +472,61 @@ def _validate_mapping(mapping, n_nodes):
                 conf["clear_nodes"] = groups
         clean["fields"][k] = conf
 
-    # slots（cert_text 单独在下面按自己的结构处理，这里跳过）
+    # slots：按区域的消费方式分三种结构，不能一律原样透传
+    #   modules / skills -> 若干套下标 [[..],[..]] + count
+    #   objective        -> 成对下标 [[a,b],...]（a 写值，同组其余清空）
+    #   其余单值区域      -> 必须是扁平整数下标
+    # 以前非 modules/skills 的区域会把嵌套结构照原样留着，而 template_export 里
+    # proj_title / proj_period / tech / github_url / demo_url 都是
+    # `for idx in nodes: _set(ts, idx, ...)`——模型按提示词"两套都列"给出
+    # [[..],[..]] 时，idx 是个列表，导出直接 TypeError 崩掉（实测踩过）。
     for k, v in slots.items():
         if k == "cert_text" or not isinstance(v, dict):
             continue
         entry = {}
         nodes = v.get("nodes")
-        if isinstance(nodes, list) and nodes:
-            # 嵌套列表（objective 的 [a,b] 对 / modules、skills 的成套下标）
-            if all(isinstance(x, list) for x in nodes):
-                sets = [scrub(x, f"slots.{k}.nodes") for x in nodes]
-                sets = [s for s in sets if s]
-                if k in ("modules", "skills"):
-                    lens = {len(s) for s in sets}
-                    if len(lens) > 1:
-                        warnings.append(f"slots.{k} 各套槽数不一致，已忽略")
-                        continue
-                    if not sets:
-                        warnings.append(f"slots.{k} 下标无效，已忽略")
-                        continue
-                    entry["nodes"] = sets
-                    entry["count"] = len(sets[0])
-                else:
-                    entry["nodes"] = sets
-                    if not sets:
-                        warnings.append(f"slots.{k} 下标无效，已忽略")
-                        continue
-            else:
-                got = scrub(nodes, f"slots.{k}.nodes")
-                if not got:
-                    warnings.append(f"slots.{k} 下标无效，已忽略")
-                    continue
-                entry["nodes"] = got
-        else:
+        if not isinstance(nodes, list) or not nodes:
             warnings.append(f"slots.{k} 缺 nodes，已忽略")
             continue
+        if k not in NESTED_SLOTS:
+            got = scrub(nodes, f"slots.{k}.nodes")
+            if not got:
+                warnings.append(f"slots.{k} 下标无效，已忽略")
+                continue
+            entry["nodes"] = got
+        elif k == "objective":
+            groups = [scrub(x, f"slots.{k}.nodes") for x in _as_sets(nodes)]
+            groups = [g for g in groups if g]
+            if not groups:
+                warnings.append(f"slots.{k} 下标无效，已忽略")
+                continue
+            entry["nodes"] = groups
+        else:
+            sets = [scrub(x, f"slots.{k}.nodes") for x in _as_sets(nodes)]
+            sets = [s for s in sets if s]
+            if not sets:
+                warnings.append(f"slots.{k} 下标无效，已忽略")
+                continue
+            if len(sets) > 2:
+                # "套"只有两种来源：形状里一份(V) + 绘图里一份(D)。出现 3 套以上，
+                # 说明模型把"每条要点算一套"理解错了（实测会把 10 个不相干节点
+                # 列成 10 套）。这种映射不能要：引擎会往那 10 个位置写同样的内容，
+                # 把简历其他区域盖掉——改错比不改更糟，所以整块丢弃。
+                warnings.append("slots.%s 被列成 %d 套（应为 1~2 套），判为映射不可信，已忽略"
+                                % (k, len(sets)))
+                continue
+            lens = [len(s) for s in sets]
+            if len(set(lens)) > 1:
+                # 两套条数对不齐时按较少的那套走。以前这里是整块丢弃，
+                # 后果是"项目要点/专业技能"整个区域完全不参与定制——
+                # 简历最核心的两块白丢，只剩一句警告。
+                n = min(lens)
+                warnings.append("slots.%s 两套条数为 %s，按最少的 %d 条处理，"
+                                "多出的位置保持你原文不动"
+                                % (k, "/".join(str(x) for x in lens), n))
+                sets = [s[:n] for s in sets]
+            entry["nodes"] = sets
+            entry["count"] = len(sets[0])
         for kk in ("label_nodes", "bullet_nodes"):
             if isinstance(v.get(kk), list):
                 got = scrub(v[kk], f"slots.{k}.{kk}")
