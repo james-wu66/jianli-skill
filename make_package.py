@@ -12,7 +12,18 @@
 import os
 import re
 import shutil
+import sys
 import zipfile
+
+# cmd 默认代码页是 936(GBK)，✅/❌ 这类字符编不出来会抛 UnicodeEncodeError：
+# 打包其实已经成功，却回你一屏 traceback 让人以为失败了；更要命的是
+# "检测到 key 泄漏、拒绝出包"那两条提示也会一起变成看不懂的乱码。
+# errors="replace" 让这类字符降级成 ? —— UTF-8 终端（Git Bash / VS Code）照常显示。
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(errors="replace")
+    except Exception:
+        pass
 
 APP = os.path.dirname(os.path.abspath(__file__))
 DIST = os.path.join(APP, "dist")
