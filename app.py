@@ -182,6 +182,25 @@ def api_wizard_save():
                     "template": profile.get("template")})
 
 
+@app.route("/api/wizard/template", methods=["POST"])
+def api_wizard_template():
+    """向导里用户手工纠正"哪几行属于哪个区域"之后重新落盘。
+    版式映射以前全自动、没人核对，模型一猜错就静默不改，用户看不出来。"""
+    data = request.get_json(silent=True) or {}
+    pack = str(data.get("pack") or "")
+    regions = data.get("regions") or {}
+    if not isinstance(regions, dict):
+        return jsonify({"ok": False, "error": "regions 格式不对"}), 400
+    try:
+        out = wizard_mod.update_template(pack, regions)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False,
+                        "error": f"保存映射失败：{type(e).__name__}: {e}"}), 500
+    return jsonify(dict(out, ok=True))
+
+
 @app.route("/api/settings/llm", methods=["GET"])
 def api_settings_get():
     """设置页读取：返回当前生效的模型配置（key 只给尾 4 位）。"""

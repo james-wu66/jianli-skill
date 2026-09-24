@@ -32,6 +32,9 @@ _EXTRACT_MAX_TOKENS = 12000
 # 模板映射：输出 1~2 千 token
 _MAP_MAX_TOKENS = 8000
 
+# 向导生成的专属模板包名（app.py 的删除接口用同一条规则）
+USER_TPL_RE = re.compile(r"^user_[0-9a-f]{8}$")
+
 # ---------------------------------------------------------------------------
 # 提示词一：简历原文 → 个人档案草稿
 # 设计要点：结构 = profile JSON 的骨架；逐字段说明取法；把"禁止编造"放在最前面；
@@ -176,6 +179,81 @@ def extract_profile(lines):
     return normalize_profile(data)
 
 
+CRITICAL_REGIONS = (("objective", "求职意向"), ("modules", "项目要点"),
+                    ("skills", "专业技能"), ("tech", "技术栈"))
+
+# 判断"这份简历到底有没有这个区域"用的标题词。区域名各家叫法不同
+# （实测见过「个人技能」「技能证书」「职业方向」），所以按别名集合找，
+# 而不是只认提示词里那一个标准名。
+REGION_HEADING_WORDS = {
+    "objective": ("求职意向", "意向岗位", "期望职位", "求职意向：", "应聘"),
+    "modules": ("项目经历", "项目经验", "个人项目", "作品集", "项目背景"),
+    "skills": ("专业技能", "个人技能", "技能特长", "技能清单", "技术能力", "掌握技能"),
+    "tech": ("技术栈", "涉及技术", "技术选型", "使用技术"),
+}
+
+
+def _regions_flat(cfg):
+    """把校验后的 cfg 摊平成 {区域: [下标...]}，给前端做可编辑的初值。"""
+    out = {}
+    for key, _label in CRITICAL_REGIONS:
+        v = (cfg.get("slots") or {}).get(key) or {}
+        out[key] = [i for i in _flatten(v.get("nodes")) if isinstance(i, int)]
+    return out
+
+
+def update_template(pack, regions):
+    """用户在页面上手工纠正过区域归属后重新落盘。
+
+    映射这件事以前全自动、没人核对，所以模型一猜错就静默失效：那块内容
+    保持原稿不动，用户拿到的是一份"看着正常但没定制过"的简历。
+    这里给他一个改的机会，校验规则与自动路径完全同一套（不另开一条）。
+    """
+    d = os.path.join(TEMPLATES_DIR, pack)
+    cfg_path = os.path.join(d, "template.json")
+    docx_path = os.path.join(d, "模板.docx")
+    if not USER_TPL_RE.match(pack) or not os.path.isfile(cfg_path):
+        raise ValueError("模板包不存在：" + str(pack))
+
+    from docx import Document
+    from docx.oxml.ns import qn as _qn
+    ts = list(Document(docx_path).element.body.iter(_qn("w:t")))
+    _dump, containers = _dump_nodes(ts)
+    old = json.load(open(cfg_path, encoding="utf-8"))
+
+    # 以现有映射为底，只覆盖用户改过的区域；其余（fields/cert/链接）原样保留
+    mapping = {"fields": {k: v.get("nodes") for k, v in (old.get("fields") or {}).items()},
+               "slots": {k: v for k, v in (old.get("slots") or {}).items()
+                         if k != "cert_text"},
+               "cert_text": (old.get("slots") or {}).get("cert_text") or {},
+               "edu_line": old.get("edu_line")}
+    for key, _label in CRITICAL_REGIONS:
+        if key in (regions or {}):
+            picked = [i for i in regions[key] if isinstance(i, int)]
+            if picked:
+                mapping["slots"][key] = {"nodes": picked}
+            else:
+                mapping["slots"].pop(key, None)
+
+    cfg, warnings, usable = _validate_mapping(mapping, len(ts), containers)
+    if not usable:
+        raise ValueError("纠正后的映射不可用：" + "；".join(warnings[-2:]))
+    cfg["display_name"] = old.get("display_name") or "用户上传模板"
+    cfg["docx"] = "模板.docx"
+    cfg["min_nodes"] = old.get("min_nodes") or len(ts)
+    cfg["content_box_cx"] = _content_box_cx(ts, cfg)
+    with open(cfg_path, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    missing = [label for key, label in CRITICAL_REGIONS if key not in cfg["slots"]]
+    # 项目要点和技能区全空 = 这份简历没有任何内容会被改写。
+    # 不报错（确实有人没有项目经历），但必须让前端能亮红警示。
+    no_content = not any(k in cfg["slots"] for k in ("modules", "skills"))
+    return {"status": "ok", "name": pack, "missing": missing, "no_content": no_content,
+            "regions": _regions_flat(cfg),
+            "counts": {k: len(v) for k, v in _regions_flat(cfg).items()},
+            "warnings": warnings}
+
+
 def build_user_template(docx_path, original_name=""):
     """
     提示词二：dump 节点 → LLM 出映射 → 校验修复 → 落成模板包目录。
@@ -207,12 +285,22 @@ def build_user_template(docx_path, original_name=""):
         msg = "；".join(warnings[-2:]) or "映射不可用"
         return {"status": "fallback", "name": template_export.DEFAULT_TEMPLATE,
                 "message": f"模板映射不可用（{msg}），使用内置模板",
-                "missing": ["求职意向", "项目要点", "专业技能", "技术栈"]}
+                "missing": [label for _k, label in CRITICAL_REGIONS]}
 
     # 关键区域逐个点名：哪个没识别到，生成时就会保持用户原文，必须让用户知道
-    critical = [("objective", "求职意向"), ("modules", "项目要点"),
-                ("skills", "专业技能"), ("tech", "技术栈")]
-    missing = [label for key, label in critical if key not in cfg["slots"]]
+    # 区分"简历里没这块"和"有但没认出来"：前者不该报警。
+    # 实测两份简历的侧栏标题是「技能证书」「个人技能」，而提示词里的区域名
+    # 是"专业技能"，模型按字面找不到就整块不映射——报"没识别出来"是假警告。
+    doc_text = " ".join((t.text or "") for t in ts)
+    absent, real_missing = [], []
+    for key, label in CRITICAL_REGIONS:
+        if key in cfg["slots"]:
+            continue
+        if any(w in doc_text for w in REGION_HEADING_WORDS.get(key, ())):
+            real_missing.append(label)
+        else:
+            absent.append(label)
+    missing = real_missing
 
     pack = f"user_{uuid.uuid4().hex[:8]}"
     d = os.path.join(TEMPLATES_DIR, pack)
@@ -227,10 +315,19 @@ def build_user_template(docx_path, original_name=""):
     msg = "已按你上传的简历版式建立专属模板"
     if missing:
         msg += ("；⚠「" + "、".join(missing) + "」没识别出来，"
-                "生成时这些区域会保持你简历原文不动")
+                "生成时这些区域会保持你简历原文不动 —— 可在下面手工指定")
+    if absent:
+        msg += "；你这份简历没有「" + "、".join(absent) + "」这块内容，不会动它"
     if warnings:
         msg += "（" + "；".join(warnings[-2:]) + "）"
-    return {"status": "ok", "name": pack, "message": msg, "missing": missing}
+    regions = _regions_flat(cfg)
+    return {"status": "ok", "name": pack, "message": msg, "missing": missing,
+            "absent": absent, "regions": regions,
+            "counts": {k: len(v) for k, v in regions.items()},
+            "samples": {k: [((ts[i].text or "").strip())[:34] for i in v[:2]]
+                        for k, v in regions.items()},
+            "nodes": [{"i": i, "text": (t.text or "").strip()}
+                      for i, t in enumerate(ts) if (t.text or "").strip()]}
 
 
 def normalize_profile(d):

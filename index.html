@@ -504,6 +504,14 @@ var MY = { basic: {}, education: {}, certificates: [] };
 var MYFULL = null;          // 完整档案（编辑回填用）
 var wzTplName = null;       // 向导解析出的专属模板目录名
 var wzPickedFile = null;
+/* ---- 版式映射的人工确认（模型猜错时用户能改）---- */
+var wzTplPack = null;       // 专属模板包名（能改映射才有值）
+var wzNodes = [];           // [{i, text}] 这份 docx 的全部文字节点
+var wzRegions = null;       // {objective:[], modules:[], skills:[], tech:[]}
+var wzRegionsDirty = false;
+var wzPicking = null;       // 当前正在手选的区域键
+var REGION_LABELS = { objective: '求职意向', modules: '项目要点',
+                      skills: '专业技能', tech: '技术栈' };
 
 function setProfileLabel(text) {
   var el = document.getElementById('profileLabel');
@@ -602,6 +610,13 @@ function wzShowForm(draft, template) {
   draft = draft || {};
   wzTplName = (template && template.status === 'ok' && template.name) ? template.name
             : (template && template.name ? template.name : wzTplName);
+  /* 只有"带节点清单的解析结果"才允许编辑映射。从「我的资料」进来时不带上一次
+     解析的残留，否则会把旧简历的映射结果显示成新简历的。 */
+  wzTplPack = (template && template.nodes && template.name) ? template.name : null;
+  wzNodes = (template && template.nodes) || [];
+  wzRegions = (template && template.regions) || null;
+  wzRegionsDirty = false;
+  wzPicking = null;
   var b = draft.basic || {};
   var e = draft.education || {};
   var f = document.getElementById('wzForm');
@@ -640,10 +655,101 @@ function wzShowForm(draft, template) {
   var scFacts = (draft.scoring || {}).facts || [];
   inp('wz_score_facts', '真实短板（一行一条，一条都别删——少一条就会少扣一次分）',
       scFacts.join('\n'), '例：民办本科在读（2027 毕业）', true);
+  rows.push('<div style="font-weight:bold;color:#5a9be0;margin:14px 0 2px">⑧ 版式识别结果'
+            + '<span style="font-weight:normal;color:#9db0c6;font-size:12px">'
+            + '　只有列出来的块会被按岗位改写；没认出来的块保持你简历原文不动</span></div>');
+  rows.push('<div id="wzTplPanel"></div>');
   rows.push('<div class="btn-row"><button class="btn-primary" onclick="wzSave()">保存并开始使用</button></div>');
   f.innerHTML = rows.join('');
   (draft.projects && draft.projects.length ? draft.projects : [{}])
     .forEach(function (p) { wzAddProject(p); });
+  renderTplPanel();
+}
+
+/* ---------- 版式映射确认面板 ---------- */
+
+function renderTplPanel() {
+  var box = document.getElementById('wzTplPanel');
+  if (!box) return;
+  if (!wzTplPack || !wzRegions) {
+    box.innerHTML = '<div style="font-size:12px;color:#6d8299;line-height:1.8">'
+      + '现在用的是内置模板（或这次没上传 docx），版式已固定，不需要确认。'
+      + '想用自己简历的版式，回到上面上传一份 .docx 简历再解析。'
+      + (wzTplPack ? '' : (MYFULL && MYFULL.template ? '当前档案模板：' + esc(MYFULL.template) : ''))
+      + '</div>';
+    return;
+  }
+  var html = '';
+  var anyContent = false;
+  Object.keys(REGION_LABELS).forEach(function (key) {
+    var idx = wzRegions[key] || [];
+    if (idx.length && (key === 'modules' || key === 'skills')) anyContent = true;
+    var preview = idx.slice(0, 2).map(function (i) {
+      var n = wzNodes.filter(function (x) { return x.i === i; })[0];
+      return n ? n.text : '';
+    }).filter(Boolean).join('　/　');
+    html += '<div style="border:1px solid #2d4768;border-radius:8px;padding:9px 11px;margin-bottom:7px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">'
+      + '<b>' + REGION_LABELS[key] + '</b>'
+      + '<span>'
+      + (idx.length
+          ? '<span style="color:#3fb96e">认出 ' + idx.length + ' 处</span>'
+          : '<span style="color:#e0584f">没认出来 · 这块不会被改写</span>')
+      + '<button class="btn-ghost" style="margin-left:10px;padding:3px 10px;font-size:11px" '
+      + 'onclick="wzOpenPicker(\'' + key + '\')">手选</button></span></div>'
+      + (preview ? '<div style="font-size:11.5px;color:#9db0c6;margin-top:4px;word-break:break-all">'
+                   + esc(preview.slice(0, 90)) + '</div>' : '')
+      + (wzPicking === key ? wzPickerHtml(key) : '')
+      + '</div>';
+  });
+  if (!anyContent) {
+    html = '<div class="errbox" style="margin-bottom:8px"><b>注意</b>'
+         + '项目要点和专业技能两块都没有映射上，生成的简历不会有任何内容被改写，'
+         + '只会替换姓名等固定信息。请点下面的「手选」把它们圈出来。</div>' + html;
+  }
+  box.innerHTML = html;
+}
+
+function wzPickerHtml(key) {
+  var picked = {};
+  (wzRegions[key] || []).forEach(function (i) { picked[i] = 1; });
+  var rows = wzNodes.map(function (n) {
+    return '<label style="display:block;font-size:12px;padding:2px 0;cursor:pointer">'
+      + '<input type="checkbox" data-pick="' + n.i + '"' + (picked[n.i] ? ' checked' : '') + '> '
+      + '<span style="color:#6d8299">' + n.i + '</span> '
+      + esc(n.text.slice(0, 60)) + '</label>';
+  }).join('');
+  return '<div style="margin-top:8px;border-top:1px solid #2d4768;padding-top:8px">'
+    + '<input type="text" id="wzPickFilter" placeholder="输入关键词筛，例如 项目 / 技能 / ●" '
+    + 'oninput="wzFilterPicker()" style="width:100%;margin-bottom:6px">'
+    + '<div id="wzPickList" style="max-height:230px;overflow:auto;border:1px solid #2d4768;'
+    + 'border-radius:6px;padding:6px 8px;background:#0e1723">' + rows + '</div>'
+    + '<div class="btn-row" style="margin-top:7px">'
+    + '<button class="btn-primary" style="padding:5px 14px;font-size:12px" '
+    + 'onclick="wzCommitPicker(\'' + key + '\')">选中这些</button>'
+    + '<button class="btn-ghost" style="padding:5px 14px;font-size:12px" '
+    + 'onclick="wzCancelPicker()">取消</button></div></div>';
+}
+
+function wzOpenPicker(key) { wzPicking = key; renderTplPanel(); }
+function wzCancelPicker() { wzPicking = null; renderTplPanel(); }
+
+function wzFilterPicker() {
+  var q = (document.getElementById('wzPickFilter').value || '').trim().toLowerCase();
+  document.querySelectorAll('#wzPickList label').forEach(function (lb) {
+    lb.style.display = !q || lb.textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+  });
+}
+
+function wzCommitPicker(key) {
+  var got = [];
+  document.querySelectorAll('#wzPickList input[data-pick]').forEach(function (cb) {
+    if (cb.checked) got.push(parseInt(cb.getAttribute('data-pick'), 10));
+  });
+  wzRegions[key] = got;
+  wzRegionsDirty = true;
+  wzPicking = null;
+  renderTplPanel();
 }
 
 /* 项目卡片：动态增删，每张卡片内的输入框用 data-f 标记字段名 */
@@ -913,13 +1019,27 @@ function wzSave() {
   });
 
   wzStatus('保存中…');
-  fetch('/api/wizard/save', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(profile)
-  }).then(function (r) { return r.json(); }).then(function (d) {
-    if (!d.ok) { wzStatus('保存失败：' + (d.error || ''), 'err'); return; }
-    wzStatus('✅ 已保存，正在进入工具…');
-    setTimeout(function () { location.reload(); }, 800);
+  /* 先把用户纠正过的版式映射落盘，再存档案：两步都成功才算保存完成，
+     否则会出现"档案说用这个模板、模板里的映射还是模型猜错的那版"。 */
+  var pre = (wzTplPack && wzRegionsDirty)
+    ? fetch('/api/wizard/template', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pack: wzTplPack, regions: wzRegions })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) throw new Error(d.error || '版式映射保存失败');
+        wzRegions = d.regions; wzRegionsDirty = false; renderTplPanel();
+      })
+    : Promise.resolve();
+
+  pre.then(function () {
+    return fetch('/api/wizard/save', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile)
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.ok) { wzStatus('保存失败：' + (d.error || ''), 'err'); return; }
+      wzStatus('✅ 已保存，正在进入工具…');
+      setTimeout(function () { location.reload(); }, 800);
+    });
   }).catch(function (e) {
     wzStatus('保存失败：' + e.message, 'err');
   });
