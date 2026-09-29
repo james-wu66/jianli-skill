@@ -10,6 +10,8 @@ profiles/active.txt
 python_local.txt
 
 # ===== 个人数据与私人产物 =====
+# 所有私人文档统一放这个文件夹，整目录锁死，以后往里加什么都不怕漏
+文档/
 output/
 dist/
 _backup_*/
