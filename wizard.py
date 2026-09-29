@@ -24,7 +24,6 @@ from llm_client import call_model
 from resume_parser import _extract_lines
 import template_export
 
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES_DIR = template_export.TEMPLATES_DIR
 
 # 提取档案：输出约 1~3 千 token，12000 足够且不触发长思考
@@ -254,33 +253,25 @@ def update_template(pack, regions):
             "warnings": warnings}
 
 
-def build_user_template(docx_path, original_name=""):
-    """
-    提示词二：dump 节点 → LLM 出映射 → 校验修复 → 落成模板包目录。
-    返回 {"status": "ok"|"fallback", "name": 目录名, "message": ...}
+def save_mapping_pack(docx_path, mapping, original_name="", pack=None):
+    """映射之后那半段的唯一实现：校验映射 → 按容器分套 → 落成模板包。
+
+    网页版（模型自动出映射）和 skill 版（Agent 自己决定哪个节点放什么）都必须
+    走这一个函数。分成两份写就会出现两套校验规则，一旦分叉，同一份简历在两个
+    入口认出的区域不一样，而且不报错——这正是 9/24 那轮修掉的那类静默劣化。
+
+    返回 {"status": "ok"|"fallback", ...}；fallback 表示映射不可用。
     """
     from docx import Document
     doc = Document(docx_path)
     ts = list(doc.element.body.iter(qn("w:t")))
-    dump, containers = _dump_nodes(ts)
-    if not dump.strip():
+    _dump, containers = _dump_nodes(ts)
+    n = len(ts)
+    if not n:
         return {"status": "fallback", "name": template_export.DEFAULT_TEMPLATE,
                 "message": "文档里没有文字，无法当模板"}
 
-    content, _, _ = call_model(
-        messages=[
-            {"role": "system", "content": _MAP_SYSTEM},
-            {"role": "user",
-             "content": "文字节点清单（格式「下标|结构|文字」）：\n"
-                        + dump[:16000] + "\n\n请输出映射 JSON。"},
-        ],
-        max_tokens=_MAP_MAX_TOKENS, temperature=0.2, no_think=True)
-    mapping = _parse_json(content)
-    if not isinstance(mapping, dict):
-        return {"status": "fallback", "name": template_export.DEFAULT_TEMPLATE,
-                "message": "模板结构分析失败，使用内置模板"}
-
-    cfg, warnings, usable = _validate_mapping(mapping, len(ts), containers)
+    cfg, warnings, usable = _validate_mapping(mapping, n, containers)
     if not usable:
         msg = "；".join(warnings[-2:]) or "映射不可用"
         return {"status": "fallback", "name": template_export.DEFAULT_TEMPLATE,
@@ -302,22 +293,23 @@ def build_user_template(docx_path, original_name=""):
             absent.append(label)
     missing = real_missing
 
-    pack = f"user_{uuid.uuid4().hex[:8]}"
+    pack = pack or f"user_{uuid.uuid4().hex[:8]}"
     d = os.path.join(TEMPLATES_DIR, pack)
     os.makedirs(d, exist_ok=True)
     shutil.copyfile(docx_path, os.path.join(d, "模板.docx"))
     cfg["display_name"] = original_name or "用户上传模板"
     cfg["docx"] = "模板.docx"
-    cfg["min_nodes"] = len(ts)
+    cfg["min_nodes"] = n
     cfg["content_box_cx"] = _content_box_cx(ts, cfg)
     with open(os.path.join(d, "template.json"), "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
-    msg = "已按你上传的简历版式建立专属模板"
+
+    msg = "已按上传的简历版式建立专属模板"
     if missing:
         msg += ("；⚠「" + "、".join(missing) + "」没识别出来，"
-                "生成时这些区域会保持你简历原文不动 —— 可在下面手工指定")
+                "生成时这些区域会保持简历原文不动 —— 可以手工指定")
     if absent:
-        msg += "；你这份简历没有「" + "、".join(absent) + "」这块内容，不会动它"
+        msg += "；这份简历没有「" + "、".join(absent) + "」这块内容，不会动它"
     if warnings:
         msg += "（" + "；".join(warnings[-2:]) + "）"
     regions = _regions_flat(cfg)
@@ -326,8 +318,42 @@ def build_user_template(docx_path, original_name=""):
             "counts": {k: len(v) for k, v in regions.items()},
             "samples": {k: [((ts[i].text or "").strip())[:34] for i in v[:2]]
                         for k, v in regions.items()},
-            "nodes": [{"i": i, "text": (t.text or "").strip()}
-                      for i, t in enumerate(ts) if (t.text or "").strip()]}
+            "n_nodes": n}
+
+
+def build_user_template(docx_path, original_name=""):
+    """
+    提示词二：dump 节点 → LLM 出映射 → 校验修复 → 落成模板包目录。
+    返回 {"status": "ok"|"fallback", "name": 目录名, "message": ...}
+    """
+    from docx import Document
+    doc = Document(docx_path)
+    ts = list(doc.element.body.iter(qn("w:t")))
+    dump, _containers = _dump_nodes(ts)
+    if not dump.strip():
+        return {"status": "fallback", "name": template_export.DEFAULT_TEMPLATE,
+                "message": "文档里没有文字，无法当模板"}
+
+    content, _, _ = call_model(
+        messages=[
+            {"role": "system", "content": _MAP_SYSTEM},
+            {"role": "user",
+             "content": "文字节点清单（格式「下标|结构|文字」）：\n"
+                        + dump[:16000] + "\n\n请输出映射 JSON。"},
+        ],
+        max_tokens=_MAP_MAX_TOKENS, temperature=0.2, no_think=True)
+    mapping = _parse_json(content)
+    if not isinstance(mapping, dict):
+        return {"status": "fallback", "name": template_export.DEFAULT_TEMPLATE,
+                "message": "模板结构分析失败，使用内置模板"}
+
+    out = save_mapping_pack(docx_path, mapping, original_name)
+    if out.get("status") != "ok":
+        return out
+    # 前端手工纠正要用完整节点表，这里补回去（save_mapping_pack 只回关键区）
+    out["nodes"] = [{"i": i, "text": (t.text or "").strip()}
+                    for i, t in enumerate(ts) if (t.text or "").strip()]
+    return out
 
 
 def normalize_profile(d):
