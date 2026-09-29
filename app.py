@@ -13,12 +13,22 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import threading
 import time
 import uuid
 
 from flask import Flask, request, jsonify, send_file
+
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+# 内核（模板原地换字 / 档案 / 映射校验）住在 skilldizi/scripts，
+# 网页版与 skill 版共用同一份代码，不复制第二份。
+# RESUME_DATA_DIR 必须赶在 import 内核之前设好：paths.py 会向上找第一个同时含
+# profiles/ 与 assets/ 的目录，内核从 skilldizi/scripts 出发会找到 skill 那份档案；
+# 而按现在的约定两个入口各用各的数据目录（网页版=项目根）。
+os.environ.setdefault("RESUME_DATA_DIR", APP_DIR)
+sys.path.insert(0, os.path.join(APP_DIR, "skilldizi", "scripts"))
 
 import template_export
 from generate import customize_resume
@@ -27,7 +37,6 @@ from resume_parser import parse_resume_docx
 import profile_store
 import wizard as wizard_mod
 
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(APP_DIR, "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 

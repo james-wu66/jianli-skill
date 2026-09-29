@@ -1,0 +1,129 @@
+{
+  "_说明": "示例个人档案（假数据）。复制本文件、改成你自己的真实信息，保存为「你的名字.json」放进 profiles/ 目录，然后在网页上点「我的资料」也可以直接编辑。字段含义见各键名。",
+
+  "basic": {
+    "name": "张三",
+    "ethnic": "汉",
+    "phone": "13800000000",
+    "email": "zhangsan@example.com",
+    "birth": "2003.05",
+    "hukou": "某省某市",
+    "degree": "本科",
+    "github": "https://github.com/demo-user",
+    "demo": "https://demo.example.com"
+  },
+
+  "education": {
+    "period": "2021.09 - 2025.06",
+    "school": "某某大学",
+    "major": "软件工程（本科）",
+    "courses": "数据结构、操作系统、计算机网络、数据库原理"
+  },
+
+  "objective_default": "Web 开发实习生",
+  "objective_candidates": [
+    "Web 开发 实习生",
+    "后端开发（Python）实习生",
+    "前端开发 实习生"
+  ],
+
+  "projects": [
+    {
+      "title": "校园二手交易平台",
+      "role": "全栈开发（独立开发）",
+      "period": "2024.03 至今",
+      "links": {
+        "github": "https://github.com/demo-user/market",
+        "demo": "https://demo.example.com"
+      },
+      "intro": "面向校园场景的二手交易网页应用，含商品发布检索、用户系统与订单管理，已部署上线。",
+      "modules": [
+        {
+          "name": "商品模块",
+          "core": true,
+          "default": "实现商品发布、分类检索与价格筛选，覆盖发布到成交的主要业务路径。",
+          "angles": {
+            "后端": "设计商品表与检索接口，按分类和价格区间组合查询，带分页与缓存。",
+            "前端": "商品列表页与发布表单开发，处理图片上传与表单校验。"
+          }
+        },
+        {
+          "name": "用户与鉴权",
+          "core": true,
+          "default": "注册登录采用 Token 鉴权，密码加盐哈希存储，保证账户安全。",
+          "angles": {
+            "后端": "Token 签发与校验中间件，登录态管理，接口鉴权统一收口。"
+          }
+        },
+        {
+          "name": "订单管理",
+          "core": false,
+          "default": "买卖双方订单状态流转，交易记录可追溯。",
+          "angles": {
+            "后端": "订单状态机设计与接口实现，异常单兜底处理。"
+          }
+        },
+        {
+          "name": "部署运维",
+          "core": false,
+          "default": "容器化部署上线，配置与代码分离。",
+          "angles": {
+            "后端": "Docker 化部署，环境变量管理配置，本地与线上隔离。"
+          }
+        }
+      ],
+      "tech_stack": [
+        "JavaScript (ES6+)", "Python Flask", "MySQL / SQLite",
+        "RESTful API", "Docker"
+      ]
+    }
+  ],
+
+  "skills": {
+    "前端": [
+      "HTML / CSS / JavaScript (ES6+)",
+      "页面开发与交互实现",
+      "移动端适配"
+    ],
+    "后端": [
+      "Python / Flask",
+      "RESTful API 设计",
+      "MySQL 建模与 SQL 优化"
+    ],
+    "工程化": [
+      "Git 版本管理",
+      "Docker 容器化部署"
+    ],
+    "语言基础": [
+      "Python",
+      "JavaScript"
+    ]
+  },
+
+  "certificates": [
+    "CET-4",
+    "软考程序员"
+  ],
+
+  "_rules_说明": "style_rules=你的个人表述红线（每条一句话，会原样进系统提示词）；tag_allow/tag_forbid=技能标签白/黑名单。全局硬规则（禁编造/禁虚构实习）内置在引擎里，写不写都在。",
+
+  "rules": {
+    "style_rules": [
+      "不写具体数字（如用户量、并发量），用定性描述替代。"
+    ],
+    "tag_allow": ["全栈", "Web", "前端", "后端", "Python"],
+    "tag_forbid": ["嵌入式", "硬件"]
+  },
+
+  "_scoring_说明": "评分基准素材：引擎会把这里的事实拼进打分纪律，告诉模型你的真实短板，防止匹配分虚高。",
+
+  "scoring": {
+    "facts": [
+      "普通本科在读（2025 毕业）",
+      "无正式实习经历",
+      "只有一段个人项目经历"
+    ]
+  },
+
+  "template": "classic_blue"
+}

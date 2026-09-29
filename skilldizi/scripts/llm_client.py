@@ -19,11 +19,18 @@ import sys
 import time
 import requests
 
+import paths
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
+# llm_config.py（各人自己的 key）和 profiles/api_key.json 都住在**数据根目录**，
+# 不是本文件所在目录。以前用 _HERE 算，等于假定"代码和数据住一起"；内核搬进
+# skilldizi/scripts/ 之后这个假定就破了——`import llm_config` 外面包着
+# except ImportError: pass，key 会**静默找不到**，症状是"模型不可用"而不报错。
+_DATA = paths.data_root()
 
 # 每台电脑自己的 key 设置（网页「设置」页写入，2026-09-16 新增）。
 # 优先级最高：这样发包时 llm_config.py 可以不带任何 key，收包人填这里即可。
-_KEY_SETTINGS = os.path.join(_HERE, "profiles", "api_key.json")
+_KEY_SETTINGS = os.path.join(_DATA, "profiles", "api_key.json")
 
 
 def _read_key_settings():
@@ -55,6 +62,7 @@ def _cfg3(prefix):
     3. 环境变量（最终兜底）
     """
     _add_path(_HERE)
+    _add_path(_DATA)
     # 0) 设置页写入的 key（最高优先级，逐字段合并）
     s = _read_key_settings()
     key = s.get(prefix + "_API_KEY")
