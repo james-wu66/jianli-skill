@@ -23,8 +23,10 @@ import os
 from docx import Document
 from docx.oxml.ns import qn
 
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMPLATES_DIR = os.path.join(APP_DIR, "assets", "templates")
+import paths
+
+DATA_ROOT = paths.data_root()
+TEMPLATES_DIR = paths.templates_dir()
 DEFAULT_TEMPLATE = "classic_blue"
 
 MODULE_SLOTS_DEFAULT = 6
@@ -314,7 +316,7 @@ if __name__ == "__main__":
     import re
     import zipfile
 
-    OUT = os.path.join(APP_DIR, "output", "_模板替换测试.docx")
+    OUT = os.path.join(paths.output_dir(), "_模板替换测试.docx")
     fake_profile = {
         "basic": {"name": "测试用例", "ethnic": "汉", "phone": "13800000000",
                   "email": "test@example.com", "birth": "2000.01",

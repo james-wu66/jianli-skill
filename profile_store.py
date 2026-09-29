@@ -14,8 +14,9 @@ profile 的结构约定（详见 profiles/示例-张三.json 的 _说明）：
 import json
 import os
 
-_APP_DIR = os.path.dirname(os.path.abspath(__file__))
-PROFILES_DIR = os.path.join(_APP_DIR, "profiles")
+import paths
+
+PROFILES_DIR = paths.profiles_dir()
 ACTIVE_FILE = os.path.join(PROFILES_DIR, "active.txt")
 
 # 示例档案（给别人照抄结构用的假人），永远不算"当前用户的档案"

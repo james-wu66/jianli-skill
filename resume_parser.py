@@ -221,9 +221,9 @@ def parse_resume_docx(path):
 
 if __name__ == "__main__":
     import sys
+    import paths
     p = sys.argv[1] if len(sys.argv) > 1 else \
-        os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                     "assets", "templates", "classic_blue", "模板.docx")
+        os.path.join(paths.templates_dir(), "classic_blue", "模板.docx")
     d = parse_resume_docx(p)
     print("=== 固定字段 ===")
     for k, v in d["fields"].items():
