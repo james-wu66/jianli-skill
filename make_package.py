@@ -31,10 +31,23 @@ PKG_NAME = "简历定制器"
 PKG_DIR = os.path.join(DIST, PKG_NAME)
 
 # ---- 白名单：打进包里的文件 ----
+# 9/29 内核搬进 skilldizi/scripts 之后，这里必须跟着改：以前写的是根目录的
+# generate.py 等，现在那些文件已经不住在那儿了（不改就是"白名单文件缺失"直接拒绝出包）。
 FILES = [
-    "app.py", "generate.py", "llm_client.py", "profile_store.py",
-    "resume_parser.py", "template_export.py", "wizard.py", "launch.py",
-    "index.html", "启动.bat", "README.txt",
+    # 网页壳。包内数据根 = 包根，所以 profiles/ 与 assets/ 仍在包根
+    "app.py", "launch.py", "index.html", "启动.bat", "README.txt",
+    # 内核：网页版与 skill 共用同一份，app.py 会把这条路径挂进 sys.path
+    "skilldizi/scripts/paths.py",
+    "skilldizi/scripts/template_export.py",
+    "skilldizi/scripts/wizard.py",
+    "skilldizi/scripts/generate.py",
+    "skilldizi/scripts/profile_store.py",
+    "skilldizi/scripts/resume_parser.py",
+    "skilldizi/scripts/llm_client.py",
+    # skill 版用的三个命令行入口
+    "skilldizi/scripts/cli/dump_nodes.py",
+    "skilldizi/scripts/cli/apply_map.py",
+    "skilldizi/scripts/cli/postprocess.py",
 ]
 DIRS = [
     ("assets/templates/classic_blue", ["模板.docx", "template.json"]),
@@ -88,7 +101,11 @@ def main():
         src = os.path.join(APP, f)
         if not os.path.isfile(src):
             raise SystemExit(f"❌ 白名单文件缺失：{f}（先做完 README 再打包）")
-        shutil.copyfile(src, os.path.join(PKG_DIR, f))
+        dst = os.path.join(PKG_DIR, f)
+        # 白名单里现在有 skilldizi/scripts/... 这种带子目录的项，
+        # 不先建目录就会 FileNotFoundError
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copyfile(src, dst)
     for src_dir, keep in DIRS:
         dst = os.path.join(PKG_DIR, src_dir)
         os.makedirs(dst, exist_ok=True)
