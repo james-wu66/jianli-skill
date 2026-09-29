@@ -44,10 +44,12 @@ FILES = [
     "skilldizi/scripts/profile_store.py",
     "skilldizi/scripts/resume_parser.py",
     "skilldizi/scripts/llm_client.py",
-    # skill 版用的三个命令行入口
+    # skill 版用的四个命令行入口
+    "skilldizi/scripts/cli/facts.py",
     "skilldizi/scripts/cli/dump_nodes.py",
     "skilldizi/scripts/cli/apply_map.py",
     "skilldizi/scripts/cli/postprocess.py",
+    "skilldizi/SKILL.md",
 ]
 DIRS = [
     ("assets/templates/classic_blue", ["模板.docx", "template.json"]),
