@@ -205,11 +205,11 @@ def _json_schema(n, m):
     return _JSON_SCHEMA_TMPL % {"n": n, "m": m}
 
 
-def _build_user_prompt(jd_text, focus_hint, extra_material="", profile=None):
+def _build_user_prompt(jd_text, focus_hint, extra_material="", profile=None, template=None):
     profile = profile or {}
     facts = _profile_to_text(profile)
-    n = slot_counts(profile)["modules"]      # 模板里项目要点有几行
-    m = slot_counts(profile)["skills"]       # 模板里技能行有几行
+    n = slot_counts(profile, template)["modules"]   # 模板里项目要点有几行
+    m = slot_counts(profile, template)["skills"]    # 模板里技能行有几行
     hint_line = (
         '用户额外说明的侧重点：' + focus_hint
     ) if focus_hint else '（用户未指定额外侧重，请根据 JD 自行判断）'
@@ -341,7 +341,7 @@ def _pad_tech(ts, real_tech, fit):
     return out
 
 
-def _extract_json(text, profile):
+def _extract_json(text, profile, template=None):
     """
     解析模型输出的 JSON。
     处理三类情况：完整 JSON / markdown 包裹 / 被 max_tokens 截断。
@@ -356,7 +356,7 @@ def _extract_json(text, profile):
         obj = json.loads(t)
         # 正常输出也要过一遍 _fill：补默认值 + 方向内保底技术栈，
         # 之前只有截断分支过 _fill，等于这些保底对绝大多数请求根本没生效。
-        return _fill(obj, profile) if isinstance(obj, dict) else None
+        return _fill(obj, profile, template) if isinstance(obj, dict) else None
     except Exception:
         pass
 
@@ -369,22 +369,26 @@ def _extract_json(text, profile):
             try:
                 obj = json.loads(candidate + suffix)
                 if isinstance(obj, dict):
-                    return _fill(obj, profile)
+                    return _fill(obj, profile, template)
             except Exception:
                 continue
     return None
 
 
-def slot_counts(profile):
+def slot_counts(profile, template=None):
     """这份模板的项目要点区有几行、技能区有几行。
 
     以前提示词里写死"固定 6 条 / 5 条"，而导出是按模板实际位置数（template.json 的
     count）写的。两者一旦不一致：模板位置多 → 多出来的行被擦成空 ●；模板位置少 →
     写不下的要点直接丢。条数应该由模板决定，不是由提示词决定。
 
+    ⚠️ template 参数不能省：9/22 实测过一次——只看档案里的 template 字段时，
+    命令行用 --template 指定了别的包，条数却仍按档案那份算，
+    结果按 5 条交内容进只有 3 行的模板，丢了 2 条。
+
     读不到模板包时退回 6/5，与 template_export 的默认值一致。
     """
-    name = (profile or {}).get("template") or "classic_blue"
+    name = template or (profile or {}).get("template") or "classic_blue"
     out = {"modules": 6, "skills": 5}
     try:
         cfg = json.load(open(os.path.join(paths.templates_dir(), name, "template.json"),
@@ -400,7 +404,7 @@ def slot_counts(profile):
     return out
 
 
-def _fill(obj, profile):
+def _fill(obj, profile, template=None):
     """补齐模型未输出的可选字段，保证导出时不会 KeyError。"""
     projects = profile.get("projects") or [{}]
     pr = projects[0]
@@ -411,7 +415,7 @@ def _fill(obj, profile):
             "requirements": [],
         }
     # 模板要求 6 条要点 / 5 条技能，缺了就用基础素材补
-    slots = slot_counts(profile)
+    slots = slot_counts(profile, template)
     # 模板要求几条就补几条
     if not obj.get("project_points"):
         obj["project_points"] = ["●" + str(md.get("name", "")) + "：" + str(md.get("default", ""))
@@ -450,11 +454,11 @@ def _skills_as_dict(profile):
     return sk if isinstance(sk, dict) else {}
 
 
-def _fallback_result(error, profile):
+def _fallback_result(error, profile, template=None):
     """LLM 全挂时的降级结果：不编造，直接返回基础简历 + 错误说明。"""
     projects = profile.get("projects") or [{}]
     pr = projects[0]
-    slots = slot_counts(profile)
+    slots = slot_counts(profile, template)
     # 档案里的模块 / 技能组按模板位置数拼（证书组除外）
     points = ["●" + str(md.get("name", "")) + "：" + str(md.get("default", ""))
               for md in pr.get("modules", []) if isinstance(md, dict)][:slots["modules"]]
@@ -485,12 +489,15 @@ def _fallback_result(error, profile):
 # 对外主入口
 # ---------------------------------------------------------------------------
 
-def customize_resume(jd_text, focus_hint="", extra_material="", profile=None):
+def customize_resume(jd_text, focus_hint="", extra_material="", profile=None,
+                     template=None):
     """
-    输入 JD（+可选重点 +可选上传简历原文）+ 用户档案，
+    输入 JD（+可选重点 +可选上传简历原文）+ 用户档案（+本次实际用的模板包），
     返回 (定制结果 dict, 元信息 dict)。
     元信息含 model_used / usage / elapsed / fallback。
     profile 为 None时自动加载当前激活档案。
+    template 为 None 时按档案里的 template 字段决定条数；指定了就必须按它算，
+    否则会出现"条数按 A 模板产出、内容往 B 模板里写"的丢条目。
     """
     if profile is None:
         profile = load_profile()
@@ -500,14 +507,14 @@ def customize_resume(jd_text, focus_hint="", extra_material="", profile=None):
     t0 = time.time()
 
     if not jd_text or not jd_text.strip():
-        return _fallback_result("空 JD", profile), {"fallback": True, "error": "JD 为空"}
+        return _fallback_result("空 JD", profile, template), {"fallback": True, "error": "JD 为空"}
 
     content, usage, model_used = call_model(
         messages=[
             {"role": "system", "content": build_system_prompt(profile)},
             {"role": "user",
              "content": _build_user_prompt(jd_text, focus_hint,
-                                           extra_material, profile)},
+                                           extra_material, profile, template)},
         ],
         max_tokens=MAX_TOKENS,
         temperature=0.45,
@@ -525,13 +532,13 @@ def customize_resume(jd_text, focus_hint="", extra_material="", profile=None):
         # 给用户看得懂、可操作的原因，而不是干巴巴一句"模型全部不可用"
         meta["error"] = ("模型暂时都调不通。多数情况是主模型撞了限流，"
                          "一般等 2~3 分钟会自动恢复 —— 稍后再点一次生成即可。")
-        return _fallback_result("模型全部不可用", profile), meta
+        return _fallback_result("模型全部不可用", profile, template), meta
 
-    data = _extract_json(content, profile)
+    data = _extract_json(content, profile, template)
     if not data:
         meta["fallback"] = True
         meta["error"] = "模型返回内容无法解析为 JSON"
-        return _fallback_result("返回内容无法解析", profile), meta
+        return _fallback_result("返回内容无法解析", profile, template), meta
 
     data.setdefault("project_points", [])
     data.setdefault("skill_lines", [])

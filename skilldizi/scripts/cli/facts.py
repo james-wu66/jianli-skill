@@ -31,6 +31,8 @@ def main():
     sys.stdout.reconfigure(errors="replace")
     ap = argparse.ArgumentParser(description="档案 → 提示词文本")
     ap.add_argument("--profile", default="", help="档案文件名，留空用当前激活档案")
+    ap.add_argument("--template", default="",
+                    help="这次要写入的模板包名；留空用档案里的 template 字段")
     ap.add_argument("--out", default="", help="写进这个文件（UTF-8）；不填就打屏")
     a = ap.parse_args()
 
@@ -44,11 +46,12 @@ def main():
                                    "先建档案再定制。"}, ensure_ascii=True))
         return 3
 
-    slots = generate.slot_counts(profile)
+    tpl = a.template or profile.get("template") or "classic_blue"
+    slots = generate.slot_counts(profile, tpl)
     buf = io.StringIO()
     buf.write("【模板槽位】项目要点 %d 行 ｜ 技能 %d 行 ｜ 模板包 %s\n"
               "（产出条数必须等于这个数：多了会被截掉，少了会留空行，不要按 6/5 想当然）\n\n"
-              % (slots["modules"], slots["skills"], profile.get("template") or "classic_blue"))
+              % (slots["modules"], slots["skills"], tpl))
     buf.write("=== 用户唯一的真实简历事实清单（唯一信息源，禁止超出范围编造）===\n\n")
     buf.write(generate._profile_to_text(profile))
     rules = generate._rules_text(profile)

@@ -85,8 +85,12 @@ def _run_task(tid, jd, focus, extra_material, uploaded_name, profile):
     """后台线程：调模型 + 出 Word。"""
     _set_task(tid, status="running", started=time.time())
     t0 = time.time()
+    # 本次真正要写入的模板包：先定下来，条数按它算，导出也用它。
+    # 两边用同一个值，才不会出现"条数按 A 模板产出、内容往 B 模板里写"。
+    use_template = TEMPLATE_OVERRIDE or profile.get("template")
     try:
-        result, meta = customize_resume(jd, focus, extra_material, profile)
+        result, meta = customize_resume(jd, focus, extra_material, profile,
+                                        template=use_template)
     except Exception as e:
         _set_task(tid, status="error",
                   error=f"生成过程出错：{type(e).__name__}: {e}")
@@ -106,8 +110,7 @@ def _run_task(tid, jd, focus, extra_material, uploaded_name, profile):
         fname = f"{who}简历_{fit}_{stamp}.docx"
         path = os.path.join(OUTPUT_DIR, fname)
         export_from_result(result, path, profile=profile,
-                           template_dir=TEMPLATE_OVERRIDE
-                           or profile.get("template"))
+                           template_dir=use_template)
     except Exception as e:
         _set_task(tid, status="error",
                   error=f"Word 导出失败：{type(e).__name__}: {e}")

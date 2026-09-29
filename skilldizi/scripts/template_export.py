@@ -77,6 +77,72 @@ def _set(ts, idx, text):
     ts[idx].text = text
 
 
+W_P = qn("w:p")
+
+
+def _paragraph_groups(ts):
+    """把 w:t 按所属段落分组（文档顺序）。
+
+    Word 经常把肉眼看到的一句话拆成好几个 run —— 引号、字体切换、拼写检查标记都会切。
+    9/22 那份模板实测：140 个文字节点其实只有 66 个段落，一条项目要点最多占 9 个 run。
+    只写第一个 run 的话，同段后面那些 run 还留着模板原稿的后半句，
+    成品就变成"新要点 + 旧句子后半段"拼在同一行里。
+    """
+    if not ts:
+        return []
+    root = ts[0].getroottree()
+    groups, order = {}, []
+    for i, t in enumerate(ts):
+        el = t.getparent()
+        while el is not None and el.tag != W_P:
+            el = el.getparent()
+        key = root.getpath(el) if el is not None else "#%d" % i
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(i)
+    return [groups[k] for k in order]
+
+
+def _protected_indices(cfg):
+    """映射里点过的所有下标。它们属于"有人负责写"的位置，清尾巴时不许碰。"""
+    out = set()
+
+    def add(x):
+        if isinstance(x, int):
+            out.add(x)
+        elif isinstance(x, list):
+            for y in x:
+                add(y)
+
+    for v in (cfg.get("fields") or {}).values():
+        add((v or {}).get("nodes") if isinstance(v, dict) else v)
+        for lk in ("label_nodes", "bullet_nodes", "clear_nodes"):
+            add((v or {}).get(lk))
+    add((cfg.get("edu_line") or {}).get("nodes"))
+    for v in (cfg.get("slots") or {}).values():
+        add((v or {}).get("nodes"))
+        for lk in ("label_nodes", "bullet_nodes", "clear_nodes"):
+            add((v or {}).get(lk))
+    ct = cfg.get("cert_text") or {}
+    for lk in ("nodes", "label_nodes", "bullet_nodes", "clear_nodes"):
+        add(ct.get(lk))
+    return out
+
+
+def _write_line(ts, idx, text, tail_of, protected):
+    """整行写进这个 run，并清掉同一段里排在它后面、没人负责的碎片 run。
+
+    只作用于"行级"槽位（项目要点/技能行/标题/时间/技术栈/链接/证书正文）。
+    固定字段（姓名、电话这些）不走这里——那些节点本来就是"标签：值"同一个 run，
+    动它们只会增加回归风险。
+    """
+    ts[idx].text = text
+    for j in tail_of.get(idx, ()):
+        if j not in protected:
+            ts[j].text = ""
+
+
 def export_from_result(result, out_path, profile=None, template_dir=None):
     """
     对外主入口：吃 generate.customize_resume() 的 result + 用户 profile，出 docx。
@@ -99,6 +165,13 @@ def export_from_result(result, out_path, profile=None, template_dir=None):
 
     slots = cfg.get("slots", {})
     fields = cfg.get("fields", {})
+
+    # 段落归属与"没人负责的尾部 run"，供行级槽位清空用（见 _write_line）
+    tail_of = {}
+    for grp in _paragraph_groups(ts):
+        for k, i in enumerate(grp):
+            tail_of[i] = grp[k + 1:]
+    protected = _protected_indices(cfg)
 
     # ---------- 固定字段（全部来自 profile） ----------
     # 用户上传的模板不一定每个区域都有（比如没有民族/户籍），配置里缺哪个就跳过哪个
@@ -144,7 +217,7 @@ def export_from_result(result, out_path, profile=None, template_dir=None):
     objective = (result.get("objective") or "").strip()
     if conf and objective:
         for pair in conf["nodes"]:
-            _set(ts, pair[0], objective)
+            _write_line(ts, pair[0], objective, tail_of, protected)
             for extra in pair[1:]:
                 _set(ts, extra, "")
 
@@ -154,14 +227,14 @@ def export_from_result(result, out_path, profile=None, template_dir=None):
     if conf and title:
         title_line = f"{title} ｜ {role} ｜ " if role else f"{title} ｜ "
         for idx in conf["nodes"]:
-            _set(ts, idx, title_line)
+            _write_line(ts, idx, title_line, tail_of, protected)
 
     # 项目时间：优先 profile 里的项目时间
     conf = slots.get("proj_period")
     period = ((profile.get("projects") or [{}])[0].get("period") or "").strip()
     if conf and period:
         for idx in conf["nodes"]:
-            _set(ts, idx, period)
+            _write_line(ts, idx, period, tail_of, protected)
 
     conf = slots.get("modules")
     modules = result.get("project_points")
@@ -169,7 +242,11 @@ def export_from_result(result, out_path, profile=None, template_dir=None):
         count = conf.get("count", MODULE_SLOTS_DEFAULT)
         for idx_list in conf["nodes"]:
             for k in range(count):
-                _set(ts, idx_list[k], modules[k] if k < len(modules) else "")
+                if k >= len(idx_list):
+                    break      # 两套容器行数不等时按下标少的来，别越界
+                _write_line(ts, idx_list[k],
+                            modules[k] if k < len(modules) else "",
+                            tail_of, protected)
 
     conf = slots.get("tech")
     tech = result.get("tech_stack")
@@ -177,7 +254,7 @@ def export_from_result(result, out_path, profile=None, template_dir=None):
         prefix = conf.get("prefix", "技术栈：")
         line = prefix + "、".join(tech)
         for idx in conf["nodes"]:
-            _set(ts, idx, line)
+            _write_line(ts, idx, line, tail_of, protected)
 
     # 项目链接：result 优先，profile 兜底；没有就整行清空
     links = result.get("project_links") or \
@@ -188,7 +265,7 @@ def export_from_result(result, out_path, profile=None, template_dir=None):
             continue
         url = (links.get(key) or "").strip()
         for idx in conf.get("nodes", []):
-            _set(ts, idx, url)
+            _write_line(ts, idx, url, tail_of, protected)
         if not url:
             for idx in conf.get("label_nodes", []):
                 _set(ts, idx, "")
@@ -199,14 +276,18 @@ def export_from_result(result, out_path, profile=None, template_dir=None):
         count = conf.get("count", SKILL_SLOTS_DEFAULT)
         for idx_list in conf["nodes"]:
             for k in range(count):
-                _set(ts, idx_list[k], skills[k] if k < len(skills) else "")
+                if k >= len(idx_list):
+                    break
+                _write_line(ts, idx_list[k],
+                            skills[k] if k < len(skills) else "",
+                            tail_of, protected)
 
     # 证书行：来自 profile，可整行消失；模板没有证书区就跳过
     cert = slots.get("cert_text")
     if cert:
         certs = [c.strip() for c in (profile.get("certificates") or []) if c.strip()]
         for idx in cert.get("nodes", []):
-            _set(ts, idx, " / ".join(certs))
+            _write_line(ts, idx, " / ".join(certs), tail_of, protected)
         if not certs:
             for idx in (cert.get("bullet_nodes") or []) + (cert.get("label_nodes") or []):
                 _set(ts, idx, "")

@@ -60,6 +60,11 @@ def main():
                          ensure_ascii=True))
         return 3
 
+    # 模板包要先定下来：条数得按"这次真正要写进去的那个模板"算，
+    # 不能只看档案里的 template 字段（9/22 实测过：--template 指到只有 3 行技能的包，
+    # 却按档案那份 5 行去产出，结果丢了 2 条）
+    template_dir = a.template or profile.get("template")
+
     try:
         raw = _read_text(a.result)
     except Exception as e:
@@ -68,7 +73,7 @@ def main():
         return 2
 
     # 与网页版同一条解析+兜底路径
-    obj = generate._extract_json(raw, profile)
+    obj = generate._extract_json(raw, profile, template_dir)
     if not isinstance(obj, dict):
         print(json.dumps({"ok": False,
                           "error": "结果不是合法 JSON，也没能从截断内容里恢复出来。"
@@ -88,7 +93,6 @@ def main():
         "%s简历_%s_%s.docx" % (who, fit, time.strftime("%m%d_%H%M%S")))
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
 
-    template_dir = a.template or profile.get("template")
     match = obj.get("match") or {}
     try:
         template_export.export_from_result(obj, out_path, profile=profile,

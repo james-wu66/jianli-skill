@@ -85,8 +85,12 @@ _MAP_SYSTEM = """你在为「简历模板替换引擎」分析一份 docx 简历
 你的任务：判断每个区域对应哪些节点下标，输出 JSON 映射，供引擎自动替换。
 我会在下一条消息里给你文档按顺序编号的全部文字节点，每行格式「下标 | 结构 | 文字」。
 结构标记：D=这一行在 Word 绘图形状里，V=在 VML 形状里，P=普通段落，
-N=这一行是 Word 自动项目符号列表的条目（文本里看不到符号，但它确实是一条列表项）。
+N=这一行是 Word 自动项目符号列表的条目（文本里看不到符号，但它确实是一条列表项），
+F=这一行是它所在段落里第一个有文字的节点。
 同一处内容常常在 D 和 V 里各存一份（两份文字几乎一模一样）。
+⚠️ 一句话常被 Word 拆成好几个节点（引号、字体切换、拼写检查标记都会切）。
+modules / skills / proj_title / proj_period / tech 这些"行级"区域，
+**只列每段那个标 F 的节点**；同段剩下的碎片引擎会自动清空，你不要把它们列进来。
 
 输出 JSON 结构（字段严格一致；简历里没有的区域直接省略整个键）：
 {{
@@ -449,15 +453,27 @@ def _dump_nodes(ts, max_len=80):
     清单每行「下标 | 结构 | 文字」，结构标记：
       D 在 Word 绘图形状里   V 在 VML 形状里   P 普通段落
       N 该段带 Word 自动项目符号（文本里没有符号，但它是一条列表项）
+      F 这一行是**所在段落里第一个有文字的节点**
 
-    两件事都必需：
+    三件事都必需：
     1) 早先判据写成"条目通常以 ● 开头"，可分点符号五花八门
        （· / • / - / 自动编号），这类简历的"项目要点/专业技能"整块认不出来。
        给结构线索，模型才能按语义和层级判断。
     2) containers 表让【引擎自己】按容器分套。同一份内容在 V 和 D 里各存一份，
        这个事实让模型去理解并不稳定（实测把"每条要点"当成"一套"，
        10 套 x 2 条会把同一句话写进 20 个位置、盖掉简历其他区域）。
+    3) F 是给"行级区域"用的：Word 常把肉眼看到的一句话拆成好几个 run（9/22 那份
+       实测 140 个节点其实只有 66 段，一条要点最多占 9 个 run）。行级区域
+       （modules / skills / proj_title / proj_period / tech）只应映射每段的 F 节点，
+       同段其余碎片由导出器自动清空。把整段的 run 全列进去，条数会变成 run 数，
+       一句话被摊成好几行。
     """
+    firsts = set()
+    for grp in template_export._paragraph_groups(ts):
+        for i in grp:
+            if (ts[i].text or "").strip():
+                firsts.add(i)
+                break
     lines = []
     containers = {}
     for i, t in enumerate(ts):
@@ -481,6 +497,8 @@ def _dump_nodes(ts, max_len=80):
             el = el.getparent()
         if numpr:
             flags.append("N")
+        if i in firsts:
+            flags.append("F")
         containers[i] = ("D" if "D" in flags else "V" if "V" in flags else "P")
         if len(txt) > max_len:
             txt = txt[:max_len] + "…"
