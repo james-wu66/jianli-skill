@@ -3,9 +3,11 @@ llm_config.py
 config_local.py
 # 所有人的个人档案都不进仓库，只放行假人示例（别在这里写具体名字，
 # 否则 .gitignore 本身就把手用者的真名公开出去了）
-profiles/*.json
-!profiles/示例-张三.json
-profiles/active.txt
+# ⚠ 必须写 **/ 前缀：带斜杠的模式锚定在仓库根，skilldizi/profiles/ 那种
+#   子目录里的档案会挡不住（9/28 档案目录分开后就是这个形状）
+**/profiles/*.json
+!**/profiles/示例-张三.json
+**/profiles/active.txt
 # 本机 Python 路径，每台电脑不一样
 python_local.txt
 
@@ -16,8 +18,8 @@ output/
 dist/
 _backup_*/
 # 向导会把用户上传的简历原件复制成 assets/templates/user_xxxxxxxx/模板.docx，
-# 那是某个人真实的简历，绝不能进仓库历史
-assets/templates/user_*/
+# 那是某个人真实的简历，绝不能进仓库历史。同样必须 **/ 前缀，子目录才挡得住
+**/assets/templates/user_*/
 交接文档.md
 PRD_通用化.md
 计划书_发送前完善.md
