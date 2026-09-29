@@ -17,9 +17,11 @@
 """
 
 import json
+import os
 import re
 import time
 
+import paths
 from llm_client import call_model
 from profile_store import load_profile
 
@@ -172,7 +174,8 @@ def build_system_prompt(profile):
     return _SYSTEM_ROLE + "\n" + _SYSTEM_GLOBAL_RULES + "\n" + _rules_text(profile) \
         + "输出必须是合法 JSON（不要 markdown 代码块包裹，不要 JSON 外的任何文字）。"
 
-_JSON_SCHEMA = '''{
+# 条数不写死：%(n)s / %(m)s 由 slot_counts() 按模板实际位置数填入
+_JSON_SCHEMA_TMPL = '''{
   "match": {
     "score": 70,
     "recommend": "值得投/可以投/建议不投",
@@ -187,20 +190,26 @@ _JSON_SCHEMA = '''{
   "project_role": "本项目里对应的岗位角色，如 前端开发 / 后端开发 / 全栈开发",
   "project_points": [
     "●【核心】模块名：内容，45~90个汉字",
-    "（固定 6 条，多余的不要）"
+    "（%(n)s 条，与简历模板的项目要点行数一致，多余不要）"
   ],
   "tech_stack": ["只放与该岗位方向相关的技术，4~6 项"],
   "skill_lines": [
     "●分组名：内容，40~80个汉字",
-    "（固定 5 条，证书由系统单独写入，不要包含证书条目）"
+    "（%(m)s 条，与简历模板的技能行数一致；证书由系统单独写入，不要包含证书条目）"
   ],
   "rewrite_notes": "本次改了什么，25字内"
 }'''
 
 
+def _json_schema(n, m):
+    return _JSON_SCHEMA_TMPL % {"n": n, "m": m}
+
+
 def _build_user_prompt(jd_text, focus_hint, extra_material="", profile=None):
     profile = profile or {}
     facts = _profile_to_text(profile)
+    n = slot_counts(profile)["modules"]      # 模板里项目要点有几行
+    m = slot_counts(profile)["skills"]       # 模板里技能行有几行
     hint_line = (
         '用户额外说明的侧重点：' + focus_hint
     ) if focus_hint else '（用户未指定额外侧重，请根据 JD 自行判断）'
@@ -229,10 +238,12 @@ def _build_user_prompt(jd_text, focus_hint, extra_material="", profile=None):
         "任务一：把上面的事实清单，针对这份 JD 重新组织成定制版简历。\n"
         "  - 分析 JD 的岗位要求属于哪个方向。**不限于**前端/后端/全栈/AI应用/数据，"
         "测试、运维、Python 开发等任何方向都按 JD 实际判断，填进 fit 字段。\n"
-        "  - project_points【6 条】：每条写成「●模块名：内容」，核心的 2 条加【核心】前缀。\n"
+        f"  - project_points【{n} 条】：条数必须等于简历模板项目区的行数，"
+        "每条写成「●模块名：内容」，核心的 2 条加【核心】前缀。\n"
         "    按与 JD 的相关度排序，最相关的排最前；优先用【与该岗位方向同名的那条角度】的表述。\n"
         "    长度跟事实清单里那句原话差不多就行，不要为凑字数扩写。\n"
-        "  - skill_lines【5 条】：每条写成「●分组名：内容」，按与 JD 的相关度排序。\n"
+        f"  - skill_lines【{m} 条】：条数等于简历模板技能区的行数，"
+        "每条写成「●分组名：内容」，按与 JD 的相关度排序。\n"
         "    长度跟事实清单里那段差不多就行；不相关的分组改成相关角度，但不得编造。\n"
         "    ⚠️ 不要写证书/获奖这类条目 —— 证书由系统单独写入简历的证书栏，写了会重复。\n"
         "  - tech_stack（技术栈，极其重要）：从项目技术栈里【只挑与该岗位方向直接相关的 4~6 项】。\n"
@@ -261,10 +272,10 @@ def _build_user_prompt(jd_text, focus_hint, extra_material="", profile=None):
         "出现 1 条 missing 扣 8~15 分。多数应届生对大厂岗位真实匹配分在 40~70 之间，"
         "打 85 分以上必须有充分理由。\n"
         "  - 宁可诚实偏低，也不要让用户拿着虚高分去投明显不适合的岗位浪费时间。\n\n"
-        "注意：输出要精简。project_points 6 条、skill_lines 5 条，"
+        f"注意：输出要精简。project_points {n} 条、skill_lines {m} 条，"
         "tech_stack 只放 4~6 项且与该岗位方向一致。\n\n"
         "严格按以下 JSON 结构输出：\n"
-        + _JSON_SCHEMA
+        + _json_schema(n, m)
         + "\n\n现在开始，只输出 JSON。"
     )
 
@@ -364,6 +375,31 @@ def _extract_json(text, profile):
     return None
 
 
+def slot_counts(profile):
+    """这份模板的项目要点区有几行、技能区有几行。
+
+    以前提示词里写死"固定 6 条 / 5 条"，而导出是按模板实际位置数（template.json 的
+    count）写的。两者一旦不一致：模板位置多 → 多出来的行被擦成空 ●；模板位置少 →
+    写不下的要点直接丢。条数应该由模板决定，不是由提示词决定。
+
+    读不到模板包时退回 6/5，与 template_export 的默认值一致。
+    """
+    name = (profile or {}).get("template") or "classic_blue"
+    out = {"modules": 6, "skills": 5}
+    try:
+        cfg = json.load(open(os.path.join(paths.templates_dir(), name, "template.json"),
+                             encoding="utf-8"))
+        for key in ("modules", "skills"):
+            conf = (cfg.get("slots") or {}).get(key) or {}
+            groups = [len(g) for g in (conf.get("nodes") or []) if isinstance(g, list)]
+            n = min(groups) if groups else int(conf.get("count") or 0)
+            if n > 0:
+                out[key] = n
+    except Exception:
+        pass
+    return out
+
+
 def _fill(obj, profile):
     """补齐模型未输出的可选字段，保证导出时不会 KeyError。"""
     projects = profile.get("projects") or [{}]
@@ -375,13 +411,15 @@ def _fill(obj, profile):
             "requirements": [],
         }
     # 模板要求 6 条要点 / 5 条技能，缺了就用基础素材补
+    slots = slot_counts(profile)
+    # 模板要求几条就补几条
     if not obj.get("project_points"):
-        obj["project_points"] = ["●" + str(m.get("name", "")) + "：" + str(m.get("default", ""))
-                                 for m in pr.get("modules", []) if isinstance(m, dict)]
+        obj["project_points"] = ["●" + str(md.get("name", "")) + "：" + str(md.get("default", ""))
+                                 for md in pr.get("modules", []) if isinstance(md, dict)]
     if not obj.get("skill_lines"):
-        # 证书组不进技能清单（由系统单独写入证书栏），最多取 5 组
+        # 证书组不进技能清单（由系统单独写入证书栏）
         groups = [(g, items) for g, items in (_skills_as_dict(profile)).items()
-                  if "证书" not in g][:5]
+                  if "证书" not in g][:slots["skills"]]
         obj["skill_lines"] = ["●" + g + "：" + "；".join(str(i) for i in items)
                               for g, items in groups]
     obj.setdefault("rewrite_notes", "（模型未说明本次改了什么）")
@@ -395,6 +433,15 @@ def _fill(obj, profile):
                                   obj.get("fit"))
     obj.setdefault("fit", "全栈")
     obj.setdefault("objective", profile.get("objective_default", ""))
+    # 条数对齐模板：多的截掉，少的如实记缺口——绝不为了凑条数编内容
+    obj["project_points"] = list(obj["project_points"])[:slots["modules"]]
+    obj["skill_lines"] = list(obj["skill_lines"])[:slots["skills"]]
+    obj["_slots"] = slots
+    gap = {k: slots[k] - len(obj[w])
+           for k, w in (("modules", "project_points"), ("skills", "skill_lines"))
+           if slots[k] - len(obj[w]) > 0}
+    if gap:
+        obj["_slot_gap"] = gap
     return obj
 
 
@@ -407,11 +454,12 @@ def _fallback_result(error, profile):
     """LLM 全挂时的降级结果：不编造，直接返回基础简历 + 错误说明。"""
     projects = profile.get("projects") or [{}]
     pr = projects[0]
-    # 档案里的模块 / 技能组直接拼成模板要的 6+5 条（证书组除外）
-    points = ["●" + str(m.get("name", "")) + "：" + str(m.get("default", ""))
-              for m in pr.get("modules", []) if isinstance(m, dict)]
+    slots = slot_counts(profile)
+    # 档案里的模块 / 技能组按模板位置数拼（证书组除外）
+    points = ["●" + str(md.get("name", "")) + "：" + str(md.get("default", ""))
+              for md in pr.get("modules", []) if isinstance(md, dict)][:slots["modules"]]
     groups = [(g, items) for g, items in _skills_as_dict(profile).items()
-              if "证书" not in g][:5]
+              if "证书" not in g][:slots["skills"]]
     skills = ["●" + g + "：" + "；".join(str(i) for i in items) for g, items in groups]
     return {
         "fit": "全栈",

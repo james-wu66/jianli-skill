@@ -14,9 +14,10 @@ CLI：Agent（或模型）写好的定制结果 JSON → 走引擎保底 → 在
 所以 skill 里不需要、也不应该重写这些逻辑。Agent 只负责"产出那份 JSON"，
 剩下的确定性活儿全交给这里。
 
-结果 JSON 的字段契约见 generate.py 里的 _JSON_SCHEMA（objective / fit / project_title /
+结果 JSON 的字段契约见 generate.py 的 _json_schema()（条目数由 slot_counts() 按模板决定）：
+objective / fit / project_title /
 project_role / project_points / tech_stack / skill_lines / project_links / match /
-rewrite_notes）。缺字段不报错，会用档案里的基础素材补，但**绝不新增档案里没有的事实**。
+rewrite_notes。缺字段不报错，会用档案里的基础素材补，但**绝不新增档案里没有的事实**。
 """
 
 import argparse
@@ -103,6 +104,8 @@ def main():
         "out": out_path.replace("\\", "/"),
         "template": template_dir or template_export.DEFAULT_TEMPLATE,
         "fit": fit,
+        "slots": obj.get("_slots") or {},
+        "slot_gap": obj.get("_slot_gap") or {},
         "project_points": len(obj["project_points"]),
         "skill_lines": len(obj["skill_lines"]),
         "tech_stack": obj["tech_stack"],
