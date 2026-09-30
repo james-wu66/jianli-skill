@@ -111,6 +111,9 @@ python scripts/cli/postprocess.py --result 结果.json
   相关度排序；不相关的分组可以改成相关角度，但不得编造。
 - 条数**多了会被截掉、少了会在 Word 里留空行**，两边都不许发生：宁可回到事实清单里再找一条真实角度补上，
   也不要编，也不要交一份缺条的。
+- `postprocess.py` 会把两头都报出来：`slot_gap` 是"位置多、内容少"，`slot_cut` 是"内容多、位置少（已丢几条）"，
+  非空时 `warning` 里会写清楚。**`slot_cut` 非空就不算交付完成**——去合并条目，或请用户在 Word 里
+  加上对应行数后重新认一次版式。
 - `tech_stack` 极其重要：**只挑与该方向直接相关的 4~6 项**。
   - 投后端 → 只留 Python/Flask、数据库 SQL、RESTful API、Docker、CI/CD 这类；严禁出现
     JavaScript、HTML/CSS、PWA、前端动画。

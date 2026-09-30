@@ -102,6 +102,10 @@ def _run_task(tid, jd, focus, extra_material, uploaded_name, profile):
                   meta=meta)
         return
 
+    # 内容条数多于模板位置时被截掉的那几条，得让接口能看见，不然悄悄少内容没人知道
+    if result.get("_slot_cut"):
+        meta["slot_cut"] = result["_slot_cut"]
+
     try:
         fit = (result.get("fit") or "全栈").strip()
         who = (profile.get("basic") or {}).get("name") or "简历"

@@ -437,10 +437,16 @@ def _fill(obj, profile, template=None):
                                   obj.get("fit"))
     obj.setdefault("fit", "全栈")
     obj.setdefault("objective", profile.get("objective_default", ""))
-    # 条数对齐模板：多的截掉，少的如实记缺口——绝不为了凑条数编内容
+    # 条数对齐模板。多的截掉、少的记缺口——两头都必须如实报出来，
+    # 悄悄丢内容是最难被发现的那种错（模板 3 行技能、交 5 条，丢 2 条当时无人知道）。
+    before = {"modules": len(obj["project_points"]), "skills": len(obj["skill_lines"])}
     obj["project_points"] = list(obj["project_points"])[:slots["modules"]]
     obj["skill_lines"] = list(obj["skill_lines"])[:slots["skills"]]
     obj["_slots"] = slots
+    cut = {k: before[k] - slots[k]
+           for k in ("modules", "skills") if before[k] > slots[k]}
+    if cut:
+        obj["_slot_cut"] = cut
     gap = {k: slots[k] - len(obj[w])
            for k, w in (("modules", "project_points"), ("skills", "skill_lines"))
            if slots[k] - len(obj[w]) > 0}

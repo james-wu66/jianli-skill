@@ -110,6 +110,11 @@ def main():
         "fit": fit,
         "slots": obj.get("_slots") or {},
         "slot_gap": obj.get("_slot_gap") or {},
+        "slot_cut": obj.get("_slot_cut") or {},
+        "warning": (("" if not obj.get("_slot_cut") else
+                     "内容条数多于模板位置，已截断：%s。"
+                     "请把条目合并，或让用户在 Word 里加上对应行数后重新认版式。"
+                     % obj["_slot_cut"])),
         "project_points": len(obj["project_points"]),
         "skill_lines": len(obj["skill_lines"]),
         "tech_stack": obj["tech_stack"],
