@@ -157,11 +157,18 @@ def export_from_result(result, out_path, profile=None, template_dir=None):
     docx_path, cfg = load_pack(template_dir)
     doc = Document(docx_path)
     ts = list(doc.element.body.iter(qn("w:t")))
-    min_nodes = cfg.get("min_nodes", 0)
-    if len(ts) < min_nodes:
+    base_nodes = cfg.get("min_nodes", 0)
+    # 键名仍叫 min_nodes（已有模板包里存的就是建包时的节点数），但语义是"必须相等"：
+    # Word 打开另存过一份 docx，会把 run 重新切分（在空格处断开），节点数会变多，
+    # 下标跟着漂。以前只防"变少"，变多会直接放行、按下标写歪 —— 9/29 实测到一份
+    # 被 Word 存过的产物：114 个节点变成 118，引擎一声不吭。
+    if base_nodes and len(ts) != base_nodes:
         raise RuntimeError(
-            "模板结构变了：期望至少 %d 个 w:t 节点，实际 %d 个。"
-            "请重新 dump 索引再改 template.json。" % (min_nodes, len(ts)))
+            "这份 docx 的文字节点数和建立模板包时不一样：包里记的是 %d 个，"
+            "现在这个文件是 %d 个。多半是它在 Word 里被打开另存过、或者手工增删过行。"
+            "Word 存盘会重新切分文字节点，下标一漂，按下标写就会把内容写到别的行上。"
+            "请用现在这份 docx 重新认一次版式（cli/apply_map.py）。"
+            % (base_nodes, len(ts)))
 
     slots = cfg.get("slots", {})
     fields = cfg.get("fields", {})
