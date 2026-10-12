@@ -2,7 +2,8 @@
 
 **上传你的简历 → 贴上目标岗位 JD → 一键生成"内容定制 + 版式不变"的 Word 简历，附诚实的岗位匹配分。**
 
-本地运行，简历数据不出你的电脑；大模型只做"重排 + 改写"，没有编造经历的权限。
+本地运行，不经过本工具的任何服务器；大模型只做"重排 + 改写"，没有编造经历的权限。
+唯一出机器的是"生成时把内容发给你自己配置的那家大模型接口"（skill 版则是进入你和 Agent 的对话上下文）。
 
 ---
 
@@ -54,18 +55,29 @@ python app.py
 
 ## 目录结构
 
+**一个内核，两个壳**：判断与导出的唯一实现在 `skilldizi/scripts/`，网页版 `app.py` 反过来引用它。
+改内核只改那一处，两个入口共用。
+
 ```
-├── app.py              # Flask 接口层：路由 + 后台任务池
-├── generate.py         # 生成引擎：提示词 + JD 分析 + 匹配打分
-├── wizard.py           # 首次向导：简历解析 + 模板映射（两个核心提示词）
-├── template_export.py  # 模板引擎：docx 节点原地替换
-├── resume_parser.py    # 简历文件解析（支持文本框型 docx）
-├── profile_store.py    # 个人档案读写（profiles/*.json）
-├── llm_client.py       # 模型调用：主备双供应商 + 容错
-├── index.html          # 前端单页应用（原生 JS，无框架）
-├── assets/templates/   # 内置模板包（含示例档案生成的演示模板）
-└── profiles/           # 个人档案（示例-张三.json 可参考结构）
+├── app.py                  # 网页壳：Flask 路由 + 后台任务池（引用下面的内核）
+├── index.html              # 网页前端单页应用（原生 JS，无框架）
+├── launch.py / 启动.bat     # 启动器（bat 用 GBK+CRLF 存，cmd 默认代码页 936）
+├── llm_config.example.py   # API key 的文件方式（复制成 llm_config.py 再填）
+├── requirements.txt
+├── skilldizi/              # ★ skill 壳 + 唯一内核
+│   ├── SKILL.md            #   给宿主 Agent 看的说明书（分工、输出契约、映射规则）
+│   ├── scripts/            #   内核：generate / wizard / template_export /
+│   │                       #         resume_parser / profile_store / llm_client / paths
+│   │   └── cli/            #   四个命令行入口：facts / dump_nodes / apply_map / postprocess
+│   ├── assets/templates/   #   skill 版的模板包（内置 classic_blue）
+│   └── profiles/           #   skill 版的档案
+├── assets/templates/       # 网页版数据根的模板包（内置 classic_blue）
+└── profiles/               # 网页版数据根的档案（示例-张三.json 可参考结构）
 ```
+
+⚠️ **两个壳的数据目录是分开的**：网页版用仓库根的 `profiles/` + `assets/templates/`，
+skill 版用 `skilldizi/` 下的同名目录，**互不同步**（这是有意的设计，见 `skilldizi/scripts/paths.py`）。
+同一份档案想在两边都用，得自己复制一份。
 
 ## 配置
 
@@ -75,6 +87,42 @@ python app.py
 | API key（文件） | `llm_config.py`（参考 `llm_config.example.py`） | 文件方式，适合命令行党 |
 | 个人档案 | `profiles/<名字>.json` | 网页「我的资料」页可视化编辑 |
 | 个人规则 | 档案里的 `rules` 字段 | 表述红线 / 技能标签黑白名单 |
+
+## 另一种用法：skill 版（不起服务、不用 API key）
+
+同一个内核，也可以不经过网页、直接交给你的 AI Agent（Qoder / Claude 这类支持 skill 的宿主）来驱动：
+
+- **判断由宿主模型做**：读档案事实清单、判岗位方向、挑要点、决定哪个文字节点放什么内容
+- **确定性活儿交给脚本**：校验下标、按容器分套、原地换字、读写档案、按方向保底
+
+代价是：这条路径**不花你任何 API 额度、不用起服务、整条流程不到一秒**，
+但简历内容会进入你和 Agent 的对话上下文（也就是走模型厂商的服务器）。介意隐私就用网页版。
+
+把 `skilldizi/` 整个目录放进你宿主的 skill 目录即可（Qoder 是 `C:\Users\<你>\.qoder\skills\`，
+其他工具看各自文档；宿主要求 skill 的 `name` 与所在目录同名，所以目录名就是 `skilldizi`）。
+四个命令行入口：
+
+```bash
+python scripts/cli/facts.py       --out 素材.txt          # 档案 → 事实清单/红线/短板 + 模板槽位数
+python scripts/cli/dump_nodes.py  我的简历.docx --out 节点清单.txt   # 把简历摊成文字节点清单
+python scripts/cli/apply_map.py   我的简历.docx --map 映射.json --name 我的简历  # 校验映射并落模板包
+python scripts/cli/postprocess.py --result 结果.json       # 结果 JSON → 保底补齐 → 出 Word
+```
+
+具体顺序、输出契约、映射的六条判定规则都写在 `skilldizi/SKILL.md` 里，那份文件才是给 Agent 读的。
+
+## 已知限制（别当成 bug 提，都是实测出来的边界）
+
+1. **必须是规范 `.docx`**。版式保持靠"在你自己那份 docx 上原地换文字节点"，不是重画。
+   所以不解析 PDF（无 OCR）、不改配色、不重排版式、不填网申表单。
+2. **跨版式映射只在两份真实版式上验证过**（内置 `classic_blue` 和 owner 自己的一份简历）。
+   换一份别人设计的简历时，映射结果**必须逐项核对**——识别不到的区域会保留你的原文，
+   如果那份模板参考了别人的简历，残留的就是别人的信息。
+3. **条数由模板决定，不由代码决定**。`facts.py` 会报"项目要点 N 行 ｜ 技能 M 行"，
+   产出必须等于这个数；模板技能区只有 3 行就只放得下 3 条。想多放得先在 Word 里加行、重新认一次版式。
+4. **不要用被 Word 另存过的文件配旧模板包直接生成**。Word 存盘会重新切分文字节点，下标一漂就写歪行。
+   导出器现在会直接拦住（节点数必须与建包时相等），遇到就重新 `apply_map` 认一次版式。
+5. **内置模板是中性占位**，不含任何真人姓名、电话、邮箱或项目。
 
 ## 常见问题
 
