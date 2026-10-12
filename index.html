@@ -451,6 +451,7 @@ button {
       <div class="btn-row">
         <button class="btn-primary" id="wzAnalyze" onclick="wzAnalyze()">解析我的简历</button>
         <button class="btn-ghost" onclick="wzShowForm(null, null)">跳过解析，手动填写</button>
+        <button class="btn-ghost" onclick="setView(false)">返回主页</button>
       </div>
       <div id="wzStatus" style="margin-top:12px"></div>
       <div id="wzForm" style="display:none"></div>
@@ -545,16 +546,25 @@ routeByProfile();
 /* ---------- 向导（M2）---------- */
 
 function showWizard(prefill) {
-  document.querySelector('.wrap').style.display = 'none';
-  document.getElementById('wizardView').style.display = '';
+  setView(true);
   if (prefill) wzShowForm(prefill.draft, prefill.template);
 }
 
 function openWizard() {
-  document.getElementById('wizardView').style.display = '';
-  document.querySelector('.wrap').style.display = 'none';
+  setView(true);
   // 回填现有档案（编辑模式），规则等不显示的字段保存在 MYFULL 里，保存时带回去
   wzShowForm(MYFULL ? JSON.parse(JSON.stringify(MYFULL)) : null, MYFULL ? { name: MYFULL.template } : null);
+}
+
+/* 向导就住在主页那个 .wrap 里面，所以不能藏 .wrap —— 一藏就把向导和主页一起藏了
+   （点「我的资料」整页空白就是这么来的）。要藏的只有主页那几张卡片。 */
+function setView(wizardOn) {
+  var wv = document.getElementById('wizardView');
+  Array.prototype.forEach.call(wv.parentElement.children, function (c) {
+    if (c === wv || c.tagName === 'SCRIPT') return;
+    c.style.display = wizardOn ? 'none' : '';
+  });
+  wv.style.display = wizardOn ? '' : 'none';
 }
 
 function wzPick(input) {
