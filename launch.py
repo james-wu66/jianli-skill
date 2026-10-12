@@ -166,6 +166,50 @@ def auto_open_browser():
         return True
 
 
+DEP_PKGS = {"flask": "flask", "docx": "python-docx", "requests": "requests"}
+
+
+def _pip_cmd(py, missing):
+    cmd = [py, "-m", "pip", "install", "--disable-pip-version-check"]
+    cmd += [DEP_PKGS[m] for m in missing]
+    return cmd + ["-i", MIRROR, "--trusted-host", "pypi.tuna.tsinghua.edu.cn"]
+
+
+def install_deps(py, missing, yes=False):
+    """缺依赖时当场装上，装完继续启动。
+
+    yes=False 时问一句；拿不到输入（非交互）就默认装 —— 双击这个入口的人
+    本来就不该被要求手抄 pip 命令。
+    """
+    print("\n[缺少依赖] " + "、".join(missing))
+    if not yes:
+        try:
+            ans = input("现在自动安装吗？（直接回车 = 装，输入 n 回车 = 跳过）").strip().lower()
+        except EOFError:
+            print("（没拿到输入，按装处理）")
+            ans = ""
+        if ans.startswith("n"):
+            print("已跳过。需要时手动执行：\n  " + " ".join(_pip_cmd(py, missing)))
+            return False
+    print("开始安装，可能要一两分钟，请保持这个窗口开着…\n")
+    try:
+        rc = subprocess.call(_pip_cmd(py, missing))
+    except Exception as e:
+        print(f"\n安装命令没能执行：{type(e).__name__}: {e}")
+        return False
+    if rc != 0:
+        print(f"\npip 退出码 {rc}，安装没成功。上面是它的原始报错。")
+        print("也可以自己复制这行去执行：\n  " + " ".join(_pip_cmd(py, missing)))
+        return False
+    still = check_deps(py)
+    if still:
+        print("\n装完了，但这几个模块仍然导入不了：" + "、".join(still))
+        print("多半是这台机器上有多个 Python，包装到了另一个里。")
+        return False
+    print("\n依赖装好了。")
+    return True
+
+
 def main():
     os.chdir(HERE)
     print(BANNER.format(port=PORT))
@@ -192,14 +236,9 @@ def main():
     print(f"使用 Python：{py}")
 
     missing = check_deps(py)
-    if missing:
-        pkgs = {"flask": "flask", "docx": "python-docx", "requests": "requests"}
-        print("\n[缺少依赖] " + "、".join(missing))
-        print("复制下面这行命令执行即可（国内用清华源，更快）：\n")
-        cmd = f'"{py}" -m pip install ' + " ".join(pkgs[m] for m in missing)
-        cmd += f" -i {MIRROR} --trusted-host pypi.tuna.tsinghua.edu.cn"
-        print(" " + cmd)
-        input("\n按回车退出")
+    if missing and not install_deps(py, missing):
+        print("\n依赖没装上，服务起不来。装好之后再双击一次 启动.bat。")
+        input("按回车退出")
         sys.exit(1)
 
     try:
